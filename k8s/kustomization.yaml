@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cloud-ide
+resources:
+  - backend.yaml
+  - frontend.yaml
+  - ingress.yaml
+# scripts/deploy.sh sets newTag to the commit being deployed.
+images:
+  - name: cloud-ide-backend
+    newTag: dev
+  - name: cloud-ide-frontend
+    newTag: dev

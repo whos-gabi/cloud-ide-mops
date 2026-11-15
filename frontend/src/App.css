@@ -1,0 +1,52 @@
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 16px;
+}
+
+h1 {
+  font-size: 2.5rem;
+  margin: 0 0 8px;
+}
+
+.tagline {
+  color: var(--muted);
+  margin: 0 0 40px;
+}
+
+.status {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.status h2 {
+  font-size: 1rem;
+  margin: 0 0 12px;
+}
+
+.status ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.dot.ok { background: #22c55e; }
+.dot.err { background: #ef4444; }
+.dot.wait { background: #eab308; }
+
+.version {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}

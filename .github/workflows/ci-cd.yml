@@ -1,0 +1,51 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on GitHub's machines for every PR and every push to main.
+  build:
+    name: Build ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run build
+
+  # Runs on our server (self-hosted runner), only after a successful build on main.
+  deploy:
+    name: Deploy to ide.filegrid.cc.cd
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, cloud-ide-deploy]
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://ide.filegrid.cc.cd
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./scripts/deploy.sh "${{ github.sha }}"
+      - name: Smoke test
+        run: curl -fsS https://ide.filegrid.cc.cd/api/health | grep -q "${{ github.sha }}"
