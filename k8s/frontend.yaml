@@ -17,6 +17,9 @@ spec:
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
           readinessProbe:
             httpGet: { path: /, port: 8080 }
             periodSeconds: 5

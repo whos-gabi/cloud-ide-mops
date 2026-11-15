@@ -48,4 +48,13 @@ jobs:
       - uses: actions/checkout@v7
       - run: ./scripts/deploy.sh "${{ github.sha }}"
       - name: Smoke test
-        run: curl -fsS https://ide.filegrid.cc.cd/api/health | grep -q "${{ github.sha }}"
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 5 https://ide.filegrid.cc.cd/api/health | grep -q "${{ github.sha }}"; then
+              echo "Live site is serving ${{ github.sha }}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Live site is not serving ${{ github.sha }} after 60s"
+          exit 1

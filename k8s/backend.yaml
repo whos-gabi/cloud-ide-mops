@@ -21,6 +21,11 @@ spec:
           env:
             - name: PORT
               value: "3000"
+          # Keep serving for a few seconds after Traefik is told to stop routing here,
+          # so rollouts don't drop requests.
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
           readinessProbe:
             httpGet: { path: /api/health, port: 3000 }
             periodSeconds: 5
