@@ -13,10 +13,19 @@ import { STARTER_FILES } from './starter-files.js'
 const NAME_TAKEN = 'Ai deja un proiect cu acest nume.'
 // Advisory lock class for "one project creation at a time per user".
 const PROJECT_LOCK_CLASS = 7_231_002
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export class ProjectService {
   async list(userId: string): Promise<Project[]> {
     return projectRepository.findByUser(userId)
+  }
+
+  // The same 404 for a project that doesn't exist and one that isn't the
+  // user's, so IDs of other people's projects can't be probed.
+  async getOwned(userId: string, projectId: string): Promise<Project> {
+    const project = UUID.test(projectId) ? await projectRepository.findOwned(projectId, userId) : null
+    if (!project) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Proiectul nu există.')
+    return project
   }
 
   // US04. The row is saved first, so the unique index settles two simultaneous

@@ -233,6 +233,7 @@ jobs:
           sid=$(api -D - -o /dev/null -d "$credentials" http://127.0.0.1/api/auth/login \
             | sed -n 's/^[Ss]et-[Cc]ookie: sid=\([^;]*\);.*/\1/p')
           [ -n "$sid" ] || { echo "::error::login set no session cookie"; exit 1; }
+          echo "::add-mask::$sid"
 
           start=$(date +%s)
           code=$(api -o "$RUNNER_TEMP/project.json" -w '%{http_code}' -H "Cookie: sid=$sid" \
@@ -247,6 +248,36 @@ jobs:
           k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide "$@"; }
           ws=$(k get deploy -l app.kubernetes.io/managed-by=workspace-manager -o jsonpath='{.items[0].metadata.name}')
           k exec "deploy/$ws" -c workspace-runtime -- cat /workspace/main.py
+          echo "SID=$sid" >> "$GITHUB_ENV"
+          echo "PROJECT_ID=$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$RUNNER_TEMP/project.json")" >> "$GITHUB_ENV"
+
+      # US08 end to end: files and directories in the real workspace, through
+      # backend -> workspace-manager -> file agent.
+      - name: Create and delete files through the ingress
+        run: |
+          files="http://127.0.0.1/api/projects/$PROJECT_ID/files"
+          # call <expected status> <curl args...>
+          call() {
+            local want=$1; shift
+            local code
+            code=$(curl -sS --max-time 30 -o "$RUNNER_TEMP/answer.json" -w '%{http_code}' \
+              -H 'Host: ide.filegrid.cc.cd' -H "Cookie: sid=$SID" -H 'Content-Type: application/json' "$@")
+            echo "$* -> $code $(cat "$RUNNER_TEMP/answer.json")"
+            [ "$code" = "$want" ] || { echo "::error::expected $want, got $code: $*"; exit 1; }
+          }
+          call 200 "$files"
+          grep -q '"path":"main.py"' "$RUNNER_TEMP/answer.json"
+          call 201 -d '{"name":"src","type":"directory"}' "$files"
+          call 201 -d '{"parent":"src","name":"app.py","type":"file"}' "$files"
+          call 409 -d '{"parent":"src","name":"app.py","type":"directory"}' "$files"
+          call 200 "$files?path=src"
+          grep -q '"path":"src/app.py"' "$RUNNER_TEMP/answer.json"
+          call 204 -X DELETE "$files?path=src&type=directory"
+          call 404 "$files?path=src"
+          k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide "$@"; }
+          ws=$(k get deploy -l app.kubernetes.io/managed-by=workspace-manager -o jsonpath='{.items[0].metadata.name}')
+          left=$(k exec "deploy/$ws" -c workspace-runtime -- ls -A /workspace)
+          [ "$left" = "main.py" ] || { echo "::error::workspace should hold only main.py, has: $left"; exit 1; }
 
       # Posted as annotations, so the reason shows on the PR's checks page
       # without opening the job log.

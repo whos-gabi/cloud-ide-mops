@@ -18,6 +18,21 @@ export class ProjectRepository {
     await dataSource.getRepository(Project).delete({ id })
   }
 
+  // Only if it belongs to the user.
+  async findOwned(id: string, userId: string): Promise<Project | null> {
+    return dataSource.getRepository(Project).findOneBy({ id, userId })
+  }
+
+  // Marks the project as changed now (e.g. a file was added).
+  async touch(id: string): Promise<void> {
+    await dataSource
+      .createQueryBuilder()
+      .update(Project)
+      .set({ updatedAt: () => 'now()' })
+      .where('id = :id', { id })
+      .execute()
+  }
+
   // The user's projects, most recently changed first.
   async findByUser(userId: string): Promise<Project[]> {
     return dataSource.getRepository(Project).find({

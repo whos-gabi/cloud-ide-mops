@@ -25,6 +25,7 @@ type fakeWorkspaceService struct {
 	readFile        func(context.Context, string, string) ([]byte, error)
 	listFiles       func(context.Context, string, string) (*workspace.FileNode, error)
 	createFile      func(context.Context, string, string, []byte) error
+	deleteDirectory func(context.Context, string, string) error
 }
 
 func (f *fakeWorkspaceService) CreateWorkspace(ctx context.Context, req workspace.CreateWorkspaceRequest) error {
@@ -57,6 +58,9 @@ func (f *fakeWorkspaceService) DeleteFile(context.Context, string, string) error
 func (f *fakeWorkspaceService) RenameFile(context.Context, string, string, string) error { return nil }
 func (f *fakeWorkspaceService) MoveFile(context.Context, string, string, string) error   { return nil }
 func (f *fakeWorkspaceService) CreateDirectory(context.Context, string, string) error    { return nil }
+func (f *fakeWorkspaceService) DeleteDirectory(ctx context.Context, id, path string) error {
+	return f.deleteDirectory(ctx, id, path)
+}
 
 // serve sends a request with the right token through the router.
 func serve(service workspaceService, method, target string, body io.Reader) *httptest.ResponseRecorder {
@@ -345,5 +349,38 @@ func TestFileContentHandlerReturnsServerError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "storage unavailable") {
 		t.Fatalf("expected error body, got %q", rec.Body.String())
+	}
+}
+
+func TestDeleteDirectoryHandler(t *testing.T) {
+	var gotID, gotPath string
+	service := &fakeWorkspaceService{
+		deleteDirectory: func(_ context.Context, id, path string) error {
+			gotID, gotPath = id, path
+			return nil
+		},
+	}
+
+	rec := serve(service, http.MethodDelete, "/workspaces/ws-1/directories?path=src%2Flib", nil)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+	if gotID != "ws-1" || gotPath != "src/lib" {
+		t.Fatalf("unexpected arguments: %q, %q", gotID, gotPath)
+	}
+}
+
+func TestDeleteDirectoryHandlerForwardsNotFound(t *testing.T) {
+	service := &fakeWorkspaceService{
+		deleteDirectory: func(context.Context, string, string) error {
+			return &workspace.StatusError{Status: http.StatusNotFound, Message: "file not found"}
+		},
+	}
+
+	rec := serve(service, http.MethodDelete, "/workspaces/ws-1/directories?path=src", nil)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }

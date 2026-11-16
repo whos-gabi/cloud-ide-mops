@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { ProjectsStatus } from '../hooks/useProjects'
 import { findLanguage, type Project } from '../types/project'
 
@@ -57,20 +58,22 @@ export function ProjectList({ projects, status, error, recentId, onRetry }: Proj
           {projects.map((project) => {
             const language = findLanguage(project.language)
             return (
-              <li
-                key={project.id}
-                className={`project-row${project.id === recentId ? ' is-new' : ''}`}
-              >
-                <div className="project-info">
-                  <span className="project-name">{project.name}</span>
-                  <span className="project-meta">
-                    Modificat{' '}
-                    <time dateTime={project.updatedAt}>{formatDateTime(project.updatedAt)}</time>
+              <li key={project.id}>
+                <Link
+                  to={`/projects/${encodeURIComponent(project.id)}`}
+                  className={`project-row${project.id === recentId ? ' is-new' : ''}`}
+                >
+                  <div className="project-info">
+                    <span className="project-name">{project.name}</span>
+                    <span className="project-meta">
+                      Modificat{' '}
+                      <time dateTime={project.updatedAt}>{formatDateTime(project.updatedAt)}</time>
+                    </span>
+                  </div>
+                  <span className="lang-badge" data-language={project.language}>
+                    {language?.label ?? project.language}
                   </span>
-                </div>
-                <span className="lang-badge" data-language={project.language}>
-                  {language?.label ?? project.language}
-                </span>
+                </Link>
               </li>
             )
           })}

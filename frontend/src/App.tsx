@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AuthProvider } from './context/AuthContext'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
+import { ProjectPage } from './pages/ProjectPage'
 import { RegisterPage } from './pages/RegisterPage'
 
 export default function App() {
@@ -19,9 +20,8 @@ export default function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
-            {/* Aici vei adăuga ușor paginile viitoare, ex: */}
-            {/* <Route path="/projects" element={<ProjectsPage />} /> */}
-            {/* <Route path="/editor/:projectId" element={<EditorPage />} /> */}
+            <Route path="/projects/:projectId" element={<ProjectPage />} />
+            {/* Aici vei adăuga ușor paginile viitoare. */}
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

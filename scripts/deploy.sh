@@ -7,6 +7,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TAG="${1:-$(git rev-parse HEAD)}"
+# The file agent runs inside every workspace. Its tag changes only when its
+# code does, so workspaces are restarted (below) only when needed.
+FILE_AGENT_IMAGE="cloud-ide-file-agent:$(git rev-parse --short=12 HEAD:workspace-manager/file-agent)"
 NAMESPACE=cloud-ide
 SUDO=""
 [ "$(id -u)" -ne 0 ] && SUDO="sudo -n"
@@ -15,6 +18,8 @@ manifests="$(mktemp -d)"
 trap 'rm -rf "$manifests"' EXIT
 cp k8s/* "$manifests/"
 sed -i "s/newTag: .*/newTag: $TAG/" "$manifests/kustomization.yaml"
+sed -i "s|value: cloud-ide-file-agent:.*|value: $FILE_AGENT_IMAGE|" "$manifests/workspace-manager.yaml"
+grep -q "value: $FILE_AGENT_IMAGE" "$manifests/workspace-manager.yaml"
 
 # Fail in seconds, before the slow image builds, if the cluster would reject the
 # manifests (e.g. the deployer account lacks a permission they need).
@@ -32,12 +37,12 @@ docker build -t "cloud-ide-frontend:$TAG" frontend
 docker build -f workspace-manager/dockerfile \
   -t "cloud-ide-workspace-manager:$TAG" workspace-manager
 docker build -f workspace-manager/file-agent/dockerfile \
-  -t "cloud-ide-file-agent:dev" workspace-manager/file-agent
+  -t "$FILE_AGENT_IMAGE" workspace-manager/file-agent
 docker build -t "cloudcode:dev" workspace-runtime
 
 echo "==> Importing images into k3s"
 docker save "cloud-ide-backend:$TAG" "cloud-ide-frontend:$TAG" \
-  "cloud-ide-workspace-manager:$TAG" "cloud-ide-file-agent:dev" \
+  "cloud-ide-workspace-manager:$TAG" "$FILE_AGENT_IMAGE" \
   "cloudcode:dev" \
   | $SUDO /usr/local/bin/k3s ctr -n k8s.io images import -
 
@@ -71,9 +76,20 @@ kubectl -n "$NAMESPACE" rollout status deployment/backend --timeout=180s
 kubectl -n "$NAMESPACE" rollout status deployment/frontend --timeout=180s
 kubectl -n "$NAMESPACE" rollout status deployment/workspace-manager --timeout=180s
 
+echo "==> Workspaces: file agent $FILE_AGENT_IMAGE"
+# Workspaces created by earlier deploys still run their old file agent. Only
+# those whose image differs change (and restart); the files stay on the volume.
+WORKSPACES=app.kubernetes.io/managed-by=workspace-manager
+if [ -n "$(kubectl -n "$NAMESPACE" get deployment -l "$WORKSPACES" -o name)" ]; then
+  kubectl -n "$NAMESPACE" set image deployment -l "$WORKSPACES" "file-agent=$FILE_AGENT_IMAGE"
+fi
+
 echo "==> Cleaning up old images"
 docker images --format '{{.Repository}}:{{.Tag}}' \
   | grep -E '^cloud-ide-(backend|frontend|workspace-manager):' | grep -v ":$TAG\$" \
+  | xargs -r docker rmi >/dev/null || true
+docker images --format '{{.Repository}}:{{.Tag}}' \
+  | grep '^cloud-ide-file-agent:' | grep -vx "$FILE_AGENT_IMAGE" \
   | xargs -r docker rmi >/dev/null || true
 docker builder prune -f --filter until=72h >/dev/null || true
 

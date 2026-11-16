@@ -58,6 +58,12 @@ function cleanPath(raw: string | null): string {
   return cleaned.replace(/\/$/, '')
 }
 
+function requireEntry(workspace: FakeWorkspace, path: string, type: FakeEntry['type']): void {
+  const entry = workspace.files.get(path)
+  if (!entry) throw new Answer(404, 'file not found')
+  if (entry.type !== type) throw new Answer(400, `path is not a ${type === 'file' ? 'regular file' : 'directory'}`)
+}
+
 function requireParentDirectory(workspace: FakeWorkspace, path: string): void {
   const parent = posix.dirname(path)
   if (parent === '.') return
@@ -165,6 +171,41 @@ export async function startFakeWorkspaceManager({
       if (workspace.files.has(path)) return new Answer(409, 'directory already exists')
       workspace.files.set(path, { type: 'directory' })
       return new Answer(201)
+    }
+
+    if (method === 'GET' && rest === '/files/list') {
+      const workspace = workspaceFor(id)
+      const raw = url.searchParams.get('path') ?? ''
+      const path = raw === '' ? '.' : cleanPath(raw)
+      if (path !== '.') requireEntry(workspace, path, 'directory')
+      const children = [...workspace.files]
+        .filter(([childPath]) => posix.dirname(childPath) === path)
+        .map(([childPath, entry]) => ({
+          name: posix.basename(childPath),
+          type: entry.type,
+          ...(entry.type === 'file' && entry.content && { size: Buffer.byteLength(entry.content) }),
+        }))
+      // Like workspace-manager: "children" is left out when empty.
+      const listing = { name: raw === '' ? '.' : raw, type: 'directory', ...(children.length && { children }) }
+      return new Answer(200, JSON.stringify(listing))
+    }
+
+    if (method === 'DELETE' && rest === '/files') {
+      const workspace = workspaceFor(id)
+      const path = cleanPath(url.searchParams.get('path'))
+      requireEntry(workspace, path, 'file')
+      workspace.files.delete(path)
+      return new Answer(204)
+    }
+
+    if (method === 'DELETE' && rest === '/directories') {
+      const workspace = workspaceFor(id)
+      const path = cleanPath(url.searchParams.get('path'))
+      requireEntry(workspace, path, 'directory')
+      for (const childPath of [...workspace.files.keys()]) {
+        if (childPath === path || childPath.startsWith(`${path}/`)) workspace.files.delete(childPath)
+      }
+      return new Answer(204)
     }
 
     return new Answer(404, 'not found')

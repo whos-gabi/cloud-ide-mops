@@ -237,6 +237,19 @@ func (s *WorkspaceService) CreateDirectory(
 	return err
 }
 
+// DeleteDirectory removes a directory with everything in it.
+func (s *WorkspaceService) DeleteDirectory(
+	ctx context.Context,
+	workspaceID string,
+	path string,
+) error {
+	_, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("delete directory %q", path),
+		http.MethodDelete, workspaceID, "/directories", pathQuery(path), nil,
+	)
+	return err
+}
+
 func (s *WorkspaceService) ListFiles(
 	ctx context.Context,
 	workspaceID string,
