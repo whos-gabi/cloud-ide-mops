@@ -15,15 +15,10 @@ import (
 func BuildDeployment(req CreateWorkspaceRequest) *appsv1.Deployment {
 	replicas := int32(1)
 
-	labels := map[string]string{
-		"workspace-id": req.WorkspaceID,
-		"user-id":      req.UserID,
-	}
-
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   req.WorkspaceID,
-			Labels: labels,
+			Labels: workspaceLabels(req),
 		},
 
 		Spec: appsv1.DeploymentSpec{
@@ -37,10 +32,20 @@ func BuildDeployment(req CreateWorkspaceRequest) *appsv1.Deployment {
 
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels: workspaceLabels(req),
 				},
 
 				Spec: corev1.PodSpec{
+					// The runtime's "sleep infinity" ignores SIGTERM; don't wait
+					// the default 30 s for it when the workspace stops.
+					TerminationGracePeriodSeconds: int64Ptr(5),
+
+					// User code runs here: no Kubernetes API token in the pod.
+					AutomountServiceAccountToken: boolPtr(false),
+					// Skip the env vars Kubernetes adds for every Service in the
+					// namespace; each workspace adds a Service, so they keep growing.
+					EnableServiceLinks: boolPtr(false),
+
 					SecurityContext: &corev1.PodSecurityContext{
 						FSGroup:             int64Ptr(1000),
 						FSGroupChangePolicy: fsGroupChangePolicyPtr(corev1.FSGroupChangeOnRootMismatch),
@@ -51,7 +56,7 @@ func BuildDeployment(req CreateWorkspaceRequest) *appsv1.Deployment {
 							Name: "workspace",
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: req.WorkspaceID + "-pvc",
+									ClaimName: pvcName(req.WorkspaceID),
 								},
 							},
 						},
@@ -102,6 +107,20 @@ func BuildDeployment(req CreateWorkspaceRequest) *appsv1.Deployment {
 	}
 }
 
+// Labels for everything a workspace consists of. A new map each time, so
+// callers can't change each other's.
+func workspaceLabels(req CreateWorkspaceRequest) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/managed-by": "workspace-manager",
+		"workspace-id":                 req.WorkspaceID,
+		"user-id":                      req.UserID,
+	}
+}
+
+func pvcName(workspaceID string) string {
+	return workspaceID + "-pvc"
+}
+
 func int64Ptr(v int64) *int64 {
 	return &v
 }
@@ -117,11 +136,8 @@ func fsGroupChangePolicyPtr(v corev1.PodFSGroupChangePolicy) *corev1.PodFSGroupC
 func BuildPVC(req CreateWorkspaceRequest) *corev1.PersistentVolumeClaim {
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: req.WorkspaceID + "-pvc",
-			Labels: map[string]string{
-				"workspace-id": req.WorkspaceID,
-				"user-id":      req.UserID,
-			},
+			Name:   pvcName(req.WorkspaceID),
+			Labels: workspaceLabels(req),
 		},
 
 		Spec: corev1.PersistentVolumeClaimSpec{
@@ -141,11 +157,8 @@ func BuildPVC(req CreateWorkspaceRequest) *corev1.PersistentVolumeClaim {
 func BuildService(req CreateWorkspaceRequest) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: req.WorkspaceID,
-			Labels: map[string]string{
-				"workspace-id": req.WorkspaceID,
-				"user-id":      req.UserID,
-			},
+			Name:   req.WorkspaceID,
+			Labels: workspaceLabels(req),
 		},
 
 		Spec: corev1.ServiceSpec{

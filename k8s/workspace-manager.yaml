@@ -62,6 +62,10 @@ spec:
               value: cloud-ide-file-agent:dev
             - name: WORKSPACE_RUNTIME_IMAGE
               value: cloudcode:dev
+            # Callers (the backend) must send it as "Authorization: Bearer <token>".
+            - name: WORKSPACE_MANAGER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: workspace-manager-token, key: token }
           readinessProbe:
             httpGet: { path: /health, port: 8080 }
             periodSeconds: 5

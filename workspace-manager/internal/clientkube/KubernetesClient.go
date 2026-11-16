@@ -12,10 +12,11 @@ import (
 )
 
 type KubernetesClient struct {
-	clientset *kubernetes.Clientset
+	clientset kubernetes.Interface
 }
 
-func NewKubernetesClient(clientset *kubernetes.Clientset) (*KubernetesClient, error) {
+// Takes the interface, so tests can pass k8s.io/client-go/kubernetes/fake.
+func NewKubernetesClient(clientset kubernetes.Interface) (*KubernetesClient, error) {
 	if clientset == nil {
 		return nil, errors.New("kubernetes clientset cannot be nil")
 	}

@@ -113,6 +113,10 @@ Reguli pentru deploy:
 - Cluster: k3s pe VPS, namespace `cloud-ide`, cu ingress prin Traefik.
 - Workspace Manager și workspace-urile create dinamic rulează în același namespace
   `cloud-ide`; manifestul lui este `k8s/workspace-manager.yaml`.
+- Workspace Manager cere `Authorization: Bearer <token>` (vezi `workspace-manager/API.md`).
+  Token-ul e în secretul `workspace-manager-token`, creat de `deploy.sh` la primul deploy.
+  Workspace Manager acceptă doar workspace-uri cu numele `ws-...`, deci nu poate atinge
+  backend-ul, frontend-ul sau baza de date.
 - `scripts/deploy.sh` construiește și importă imaginile `cloud-ide-workspace-manager`,
   `cloud-ide-file-agent` și runtime-ul `cloudcode:dev` din
   `workspace-runtime/Dockerfile`. Runtime-ul poate fi înlocuit prin variabila

@@ -53,6 +53,15 @@ else
   unset DB_PASSWORD
 fi
 
+echo "==> Workspace manager token"
+# Created once; workspace-manager reads it, and so will the backend (US04).
+if kubectl -n "$NAMESPACE" get secret workspace-manager-token >/dev/null 2>&1; then
+  echo "secret workspace-manager-token already exists"
+else
+  kubectl -n "$NAMESPACE" create secret generic workspace-manager-token \
+    --from-literal=token="$(openssl rand -hex 32)"
+fi
+
 echo "==> Applying manifests"
 kubectl apply -k "$manifests"
 

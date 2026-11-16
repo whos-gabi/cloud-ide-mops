@@ -9,22 +9,37 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/whos-gabi/cloud-ide-mops/workspace-manager/internal/clientkube"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+)
+
+// Largest file agent answer read: it never serves files over 10 MB (plus room
+// for an error body). Listings aren't bounded by the agent, so they get more.
+const (
+	maxFileAgentResponse = 10<<20 + 1<<10
+	maxFileListResponse  = 64 << 20
 )
 
 type WorkspaceService struct {
 	k8s       *clientkube.KubernetesClient
 	namespace string
+	http      *http.Client
+	// Base URL of a workspace's file agent; tests point it at a local server.
+	fileAgentBaseURL func(workspaceID string) string
 }
 
 func NewWorkspaceService(
 	k8s *clientkube.KubernetesClient,
 ) *WorkspaceService {
-	return &WorkspaceService{
+	s := &WorkspaceService{
 		k8s:       k8s,
 		namespace: configuredNamespace(),
+		http:      &http.Client{Timeout: 30 * time.Second},
 	}
+	s.fileAgentBaseURL = s.clusterFileAgentURL
+	return s
 }
 
 func (s *WorkspaceService) CreateWorkspace(ctx context.Context, req CreateWorkspaceRequest) error {
@@ -82,22 +97,25 @@ func (s *WorkspaceService) StopWorkspace(
 	return nil
 }
 
+// DeleteWorkspace removes the Deployment, the Service and the PVC (with the
+// files). Parts that are already gone are skipped, so it also cleans up after
+// a half-finished create.
 func (s *WorkspaceService) DeleteWorkspace(
 	ctx context.Context,
 	workspaceID string,
 ) error {
-
-	err := s.k8s.DeleteService(ctx, s.namespace, workspaceID)
-	if err != nil {
+	// The Deployment goes first, so no pod keeps using the volume.
+	err := s.k8s.DeleteDeployment(ctx, s.namespace, workspaceID)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("Error deleting deployment: %w", err)
+	}
+	err = s.k8s.DeleteService(ctx, s.namespace, workspaceID)
+	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("Error deleting service: %w", err)
 	}
-	err = s.k8s.DeletePVC(ctx, s.namespace, workspaceID+"-pvc")
-	if err != nil {
+	err = s.k8s.DeletePVC(ctx, s.namespace, pvcName(workspaceID))
+	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("Error deleting PVC: %w", err)
-	}
-	err = s.k8s.DeleteDeployment(ctx, s.namespace, workspaceID)
-	if err != nil {
-		return fmt.Errorf("Error deleting deployment: %w", err)
 	}
 
 	return nil
@@ -128,41 +146,10 @@ func (s *WorkspaceService) ReadFile(
 	workspaceID string,
 	path string,
 ) ([]byte, error) {
-	serviceURL := "http://" + workspaceID + "." + s.namespace + ".svc.cluster.local:8081/files"
-
-	query := url.Values{}
-	query.Set("path", path)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		serviceURL+"?"+query.Encode(),
-		nil,
+	return s.fileAgentRequest(
+		ctx, fmt.Sprintf("read file %q", path),
+		http.MethodGet, workspaceID, "/files", pathQuery(path), nil,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("create file read request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("read file %q: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read file response body: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
-	}
-
-	return body, nil
 }
 
 func (s *WorkspaceService) CreateFile(
@@ -171,41 +158,11 @@ func (s *WorkspaceService) CreateFile(
 	path string,
 	content []byte,
 ) error {
-	serviceURL := s.fileAgentURL(workspaceID, "/files")
-
-	query := url.Values{}
-	query.Set("path", path)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		serviceURL+"?"+query.Encode(),
-		bytes.NewReader(content),
+	_, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("create file %q", path),
+		http.MethodPost, workspaceID, "/files", pathQuery(path), content,
 	)
-	if err != nil {
-		return fmt.Errorf("create file request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("create file %q: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read create file response: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
-	}
-
-	return nil
+	return err
 }
 
 func (s *WorkspaceService) UpdateFile(
@@ -214,41 +171,11 @@ func (s *WorkspaceService) UpdateFile(
 	path string,
 	content []byte,
 ) error {
-	serviceURL := s.fileAgentURL(workspaceID, "/files")
-
-	query := url.Values{}
-	query.Set("path", path)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPut,
-		serviceURL+"?"+query.Encode(),
-		bytes.NewReader(content),
+	_, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("update file %q", path),
+		http.MethodPut, workspaceID, "/files", pathQuery(path), content,
 	)
-	if err != nil {
-		return fmt.Errorf("create update file request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("update file %q: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read update file response: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
-	}
-
-	return nil
+	return err
 }
 
 func (s *WorkspaceService) DeleteFile(
@@ -256,41 +183,11 @@ func (s *WorkspaceService) DeleteFile(
 	workspaceID string,
 	path string,
 ) error {
-	serviceURL := s.fileAgentURL(workspaceID, "/files")
-
-	query := url.Values{}
-	query.Set("path", path)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodDelete,
-		serviceURL+"?"+query.Encode(),
-		nil,
+	_, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("delete file %q", path),
+		http.MethodDelete, workspaceID, "/files", pathQuery(path), nil,
 	)
-	if err != nil {
-		return fmt.Errorf("create delete file request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("delete file %q: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read delete file response: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
-	}
-
-	return nil
+	return err
 }
 
 func (s *WorkspaceService) RenameFile(
@@ -318,42 +215,14 @@ func (s *WorkspaceService) moveFile(
 	destination string,
 	operation string,
 ) error {
-	serviceURL := s.fileAgentURL(workspaceID, "/files/"+operation)
-
-	query := url.Values{}
-	query.Set("path", path)
+	query := pathQuery(path)
 	query.Set("destination", destination)
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		serviceURL+"?"+query.Encode(),
-		nil,
+	_, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("%s file %q", operation, path),
+		http.MethodPost, workspaceID, "/files/"+operation, query, nil,
 	)
-	if err != nil {
-		return fmt.Errorf("create %s file request: %w", operation, err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s file %q: %w", operation, path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read %s file response: %w", operation, err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
-	}
-
-	return nil
+	return err
 }
 
 func (s *WorkspaceService) CreateDirectory(
@@ -361,41 +230,11 @@ func (s *WorkspaceService) CreateDirectory(
 	workspaceID string,
 	path string,
 ) error {
-	serviceURL := s.fileAgentURL(workspaceID, "/directories")
-
-	query := url.Values{}
-	query.Set("path", path)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		serviceURL+"?"+query.Encode(),
-		nil,
+	_, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("create directory %q", path),
+		http.MethodPost, workspaceID, "/directories", pathQuery(path), nil,
 	)
-	if err != nil {
-		return fmt.Errorf("create directory request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("create directory %q: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read create directory response: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
-	}
-
-	return nil
+	return err
 }
 
 func (s *WorkspaceService) ListFiles(
@@ -403,38 +242,12 @@ func (s *WorkspaceService) ListFiles(
 	workspaceID string,
 	path string,
 ) (*FileNode, error) {
-	serviceURL := s.fileAgentURL(workspaceID, "/files/list")
-
-	query := url.Values{}
-	query.Set("path", path)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		serviceURL+"?"+query.Encode(),
-		nil,
+	body, err := s.fileAgentRequest(
+		ctx, fmt.Sprintf("list files in %q", path),
+		http.MethodGet, workspaceID, "/files/list", pathQuery(path), nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create file list request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("list files in %q: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read file list response: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf(
-			"file agent returned status %s: %s",
-			resp.Status,
-			string(body),
-		)
+		return nil, err
 	}
 
 	var entries []fileAgentEntry
@@ -466,6 +279,78 @@ func (s *WorkspaceService) ListFiles(
 	}
 
 	return result, nil
+}
+
+// fileAgentRequest calls the workspace's file agent and returns the response
+// body. op names the operation in error messages, e.g. `read file "a.txt"`.
+// A non-2xx answer becomes a *StatusError; a file agent that can't be
+// reached becomes ErrUnavailable.
+func (s *WorkspaceService) fileAgentRequest(
+	ctx context.Context,
+	op string,
+	method string,
+	workspaceID string,
+	endpoint string,
+	query url.Values,
+	body []byte,
+) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		method,
+		s.fileAgentBaseURL(workspaceID)+endpoint+"?"+query.Encode(),
+		reqBody,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: create request: %w", op, err)
+	}
+
+	resp, err := s.http.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		// A workspace that doesn't exist (any more) is a 404, not "starting".
+		if s.k8s != nil {
+			_, getErr := s.k8s.GetDeployment(ctx, s.namespace, workspaceID)
+			if apierrors.IsNotFound(getErr) {
+				return nil, fmt.Errorf("%s: %w", op, getErr)
+			}
+		}
+		return nil, fmt.Errorf("%s: %w: %w", op, ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	limit := int64(maxFileAgentResponse)
+	if endpoint == "/files/list" {
+		limit = maxFileListResponse
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("%s: read response: %w", op, err)
+	}
+	if int64(len(respBody)) > limit {
+		return nil, fmt.Errorf("%s: response larger than %d bytes", op, limit)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("%s: %w", op, &StatusError{
+			Status:  resp.StatusCode,
+			Message: fileAgentMessage(respBody),
+		})
+	}
+
+	return respBody, nil
+}
+
+func pathQuery(path string) url.Values {
+	query := url.Values{}
+	query.Set("path", path)
+	return query
 }
 
 type fileAgentEntry struct {

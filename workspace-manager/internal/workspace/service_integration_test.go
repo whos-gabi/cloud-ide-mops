@@ -43,7 +43,7 @@ func TestWorkspaceServiceKubernetesIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	workspaceID := "tdd-integration-" + time.Now().Format("20060102150405")
+	workspaceID := "ws-tdd-integration-" + time.Now().Format("20060102150405")
 	req := CreateWorkspaceRequest{
 		WorkspaceID: workspaceID,
 		UserID:      "tdd-user",
