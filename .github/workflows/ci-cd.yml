@@ -67,10 +67,131 @@ jobs:
       # Fails if a model changed without a migration.
       - run: npm run migration:check
 
+  # Go unit tests, with the same Go version the Dockerfiles build with.
+  test-go:
+    name: Test ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    container: golang:1.26-bookworm
+    env:
+      GOFLAGS: -buildvcs=false
+    strategy:
+      matrix:
+        module: [workspace-manager, workspace-manager/file-agent]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: go vet ./...
+      - run: go test ./...
+
+  # PRs only: runs the real deploy script against a throwaway k3s (same version as
+  # the server) with the same limited deploy account. Whatever would break the
+  # deploy after merge (a missing tool, a missing permission, a pod that never
+  # becomes ready) fails here, in the PR.
+  deploy-rehearsal:
+    name: Deploy rehearsal (k3s)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ADMIN_KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # infra/ is applied by hand on the server, never by CI. The rehearsal below
+      # uses this PR's version, so remind that the server needs it too.
+      - name: Check for infra/ changes
+        run: |
+          git fetch --depth=1 origin "$BASE_REF"
+          if ! git diff --quiet FETCH_HEAD HEAD -- infra/; then
+            msg="This PR changes infra/. Before merging, an admin must run on the server: sudo kubectl apply -f infra/cluster-setup.yaml. Otherwise the deploy after merge fails."
+            echo "::warning title=Admin step needed before merge::$msg"
+            echo "### ⚠️ $msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Start k3s (same version as the server)
+        run: |
+          curl -sfL https://get.k3s.io \
+            | INSTALL_K3S_VERSION=v1.37.2+k3s1 sh -s - --write-kubeconfig-mode 644
+          # On the server kubectl is k3s's own; use the same here.
+          sudo ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
+          for _ in $(seq 1 60); do
+            kubectl --kubeconfig "$ADMIN_KUBECONFIG" get nodes 2>/dev/null | grep -q ' Ready' && break
+            sleep 2
+          done
+          kubectl --kubeconfig "$ADMIN_KUBECONFIG" get nodes
+
+      # Same namespace, account and permissions as infra/setup-runner.sh creates.
+      - name: Limited deploy account
+        run: |
+          kubectl --kubeconfig "$ADMIN_KUBECONFIG" apply -f infra/cluster-setup.yaml
+          TOKEN_B64=""
+          for _ in $(seq 1 30); do
+            TOKEN_B64=$(kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide \
+              get secret deployer-token -o jsonpath='{.data.token}')
+            [ -n "$TOKEN_B64" ] && break
+            sleep 1
+          done
+          SA_TOKEN=$(echo "$TOKEN_B64" | base64 -d)
+          echo "::add-mask::$SA_TOKEN"
+          CA_DATA=$(kubectl --kubeconfig "$ADMIN_KUBECONFIG" config view --raw \
+            -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+          cat > "$RUNNER_TEMP/deployer.yaml" <<KUBE
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: k3s
+              cluster:
+                server: https://127.0.0.1:6443
+                certificate-authority-data: $CA_DATA
+          users:
+            - name: deployer
+              user:
+                token: $SA_TOKEN
+          contexts:
+            - name: deployer
+              context: { cluster: k3s, user: deployer, namespace: cloud-ide }
+          current-context: deployer
+          KUBE
+          chmod 600 "$RUNNER_TEMP/deployer.yaml"
+          echo "KUBECONFIG=$RUNNER_TEMP/deployer.yaml" >> "$GITHUB_ENV"
+
+      - name: Run the deploy script
+        run: ./scripts/deploy.sh "$GITHUB_SHA"
+
+      - name: Smoke test through the ingress
+        run: |
+          get() { curl -fsS --max-time 5 -H 'Host: ide.filegrid.cc.cd' "http://127.0.0.1$1" || true; }
+          for _ in $(seq 1 40); do
+            health=$(get /api/health)
+            page=$(get /)
+            if [[ $health == *"$GITHUB_SHA"* && $health == *'"database":"ok"'* && $page == *'id="root"'* ]]; then
+              echo "Rehearsal deploy is serving $GITHUB_SHA: $health"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Last /api/health: ${health:-<no response>}"
+          echo "Rehearsal deploy is not serving $GITHUB_SHA after 120s"
+          exit 1
+
+      - name: Cluster state (on failure)
+        if: failure()
+        run: |
+          k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide "$@" || true; }
+          k get all
+          k get events --sort-by=.lastTimestamp
+          for d in deploy/backend deploy/frontend deploy/workspace-manager statefulset/postgres; do
+            echo "--- logs $d"
+            k logs "$d" --tail=60
+          done
+
   # Runs on our server (self-hosted runner), only after a successful build on main.
   deploy:
     name: Deploy to ide.filegrid.cc.cd
-    needs: [build, test-backend]
+    needs: [build, test-backend, test-go]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, cloud-ide-deploy]
     concurrency:
@@ -84,7 +205,7 @@ jobs:
       - run: ./scripts/deploy.sh "${{ github.sha }}"
       - name: Smoke test
         run: |
-          for i in $(seq 1 12); do
+          for _ in $(seq 1 12); do
             if curl -fsS --max-time 5 https://ide.filegrid.cc.cd/api/health | grep -q "${{ github.sha }}"; then
               echo "Live site is serving ${{ github.sha }}"
               exit 0
