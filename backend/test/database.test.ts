@@ -1,16 +1,14 @@
 // Needs Postgres: docker compose up -d db
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
-import type { AddressInfo } from 'node:net'
 import { after, before, describe, it } from 'node:test'
-import { Like, QueryFailedError } from 'typeorm'
-import { createApp } from '../src/app.js'
+import { QueryFailedError } from 'typeorm'
 import { dataSource } from '../src/database/data-source.js'
-import { closeDatabase, connectDatabase, runMigrations } from '../src/database/database.js'
+import { runMigrations } from '../src/database/database.js'
 import { runInTransaction } from '../src/database/transaction.js'
 import { User } from '../src/models/user.model.js'
+import { setupDatabase, teardownDatabase, testEmail } from './helpers/database.js'
+import { startServer } from './helpers/server.js'
 
-const testEmail = () => `test-${randomUUID()}@example.com`
 const users = () => dataSource.getRepository(User)
 const newUser = (email = testEmail()) => users().create({ email, passwordHash: 'scrypt$test' })
 
@@ -20,15 +18,8 @@ function dbError(err: unknown) {
   return { code, constraint }
 }
 
-before(async () => {
-  await connectDatabase(5_000)
-  await runMigrations()
-})
-
-after(async () => {
-  await users().delete({ email: Like('test-%@example.com') })
-  await closeDatabase()
-})
+before(setupDatabase)
+after(teardownDatabase)
 
 describe('migrations', () => {
   it('has nothing left to run after startup', async () => {
@@ -124,16 +115,15 @@ describe('runInTransaction', () => {
 
 describe('GET /api/health', () => {
   it('reports the database as ok', async () => {
-    const server = createApp().listen(0)
+    const server = await startServer()
     try {
-      const { port } = server.address() as AddressInfo
-      const res = await fetch(`http://127.0.0.1:${port}/api/health`)
+      const res = await fetch(`${server.url}/api/health`)
       assert.equal(res.status, 200)
       const body = await res.json()
       assert.equal(body.status, 'ok')
       assert.equal(body.database, 'ok')
     } finally {
-      server.close()
+      await server.close()
     }
   })
 })

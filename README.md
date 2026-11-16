@@ -44,12 +44,18 @@ backend/src/
   config/        setări din variabile de mediu (DATABASE_URL, PORT)
   database/      conexiunea TypeORM, migrările, runInTransaction
   models/        entitățile TypeORM (un fișier *.model.ts pe tabel)
+  repositories/  interogările pe baza de date
+  services/      regulile de business
+  validators/    validarea body-ului (zod), cu mesaje pentru fiecare câmp
+  views/         ce returnează API-ul (ex. user fără parolă)
   controllers/   handler-ele pentru request-uri
   routes/        ce URL ajunge la ce controller (totul sub /api)
   middleware/    tratarea erorilor, 404
+  errors/        HttpError: status + cod + mesaj
+  utils/         hash-ul parolelor (scrypt)
 ```
 
-Când un story adaugă logică peste baza de date, ea intră în `services/` (reguli de business) și `repositories/` (interogări). Ce scrie mai multe lucruri deodată folosește `runInTransaction` din `database/transaction.ts`: ori se salvează tot, ori nimic.
+Un request trece prin route → controller (validare) → service → repository. Ce scrie mai multe lucruri deodată folosește `runInTransaction` din `database/transaction.ts`: ori se salvează tot, ori nimic.
 
 ## Baza de date și migrări
 
@@ -68,6 +74,14 @@ Convenții:
 - Nume explicite pentru constrângeri: `PK_<tabel>`, `UQ_<tabel>_<coloane>`, `IDX_<tabel>_<coloane>`, `FK_<tabel>_<coloană>`, `CHK_<tabel>_<regulă>`.
 - La `@Column` treci mereu tipul (`{ type: 'text' }`): în dev (tsx) TypeORM nu-l poate ghici singur.
 - O migrare deja aplicată (merge-uită pe `main`) nu se mai modifică; pentru orice schimbare faci una nouă.
+
+## API
+
+Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator, `fields` are câte un mesaj pentru fiecare câmp invalid.
+
+| Endpoint | Story | Body | Răspuns |
+|---|---|---|---|
+| `POST /api/auth/register` | US01 | `{ email, password }` | `201 { user }` · `400 VALIDATION_ERROR` · `409 EMAIL_TAKEN` |
 
 ## Cum ajunge codul live
 
