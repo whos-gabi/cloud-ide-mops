@@ -117,8 +117,7 @@ jobs:
   deploy-rehearsal:
     name: Deploy rehearsal (k3s)
     if: github.event_name == 'pull_request'
-    # Same Ubuntu as the server. On ubuntu-latest (26.04, kernel 7.0) postgres
-    # never starts: its entrypoint's gosu spins at 100% CPU.
+    # Same Ubuntu release as the server.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -181,13 +180,17 @@ jobs:
       # GitHub's machine has Go, Node and more, and full sudo; the server doesn't.
       - name: Make this machine look like the server
         run: |
-          # The only sudo rule ghrunner has (infra/setup-runner.sh).
-          echo "$(id -un) ALL=(root) NOPASSWD: /usr/local/bin/k3s ctr -n k8s.io images import -" \
-            | sudo tee /etc/sudoers.d/zz-deploy >/dev/null
-          sudo chmod 440 /etc/sudoers.d/zz-deploy
-          sudo visudo -c >/dev/null
-          sudo sed -i '/NOPASSWD/d' /etc/sudoers
-          sudo grep -rl NOPASSWD /etc/sudoers.d | grep -v zz-deploy | xargs -r sudo rm -f
+          # The only sudo rule ghrunner has (infra/setup-runner.sh). One root shell:
+          # once the broad rule is gone, a second sudo call would be refused.
+          sudo sh -ec '
+            rule=/etc/sudoers.d/zz-deploy
+            echo "$1 ALL=(root) NOPASSWD: /usr/local/bin/k3s ctr -n k8s.io images import -" > "$rule"
+            chmod 440 "$rule"
+            for f in /etc/sudoers /etc/sudoers.d/*; do
+              [ "$f" = "$rule" ] || sed -i "/NOPASSWD/d" "$f"
+            done
+            visudo -c >/dev/null
+          ' _ "$(id -un)"
           if sudo -n true 2>/dev/null; then
             echo "::error::sudo is still unrestricted on this machine"
             exit 1

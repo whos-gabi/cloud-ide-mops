@@ -13,6 +13,14 @@ spec:
     metadata:
       labels: { app: postgres }
     spec:
+      # Run as the image's postgres user (uid 70) from the start: the entrypoint
+      # then skips its root-to-postgres switch (gosu), which hangs at 100% CPU on
+      # Linux 7.0, and nothing in the pod runs as root. The data directory is
+      # already owned by uid 70.
+      securityContext:
+        runAsUser: 70
+        runAsGroup: 70
+        runAsNonRoot: true
       containers:
         - name: postgres
           image: postgres:17-alpine
