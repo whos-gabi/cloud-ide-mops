@@ -28,6 +28,7 @@ func configuredValue(key, fallback string) string {
 	return value
 }
 
-func (s *WorkspaceService) fileAgentURL(workspaceID, path string) string {
-	return "http://" + workspaceID + "." + s.namespace + ".svc.cluster.local:8081" + path
+// The workspace's Service has the workspace's name and fronts its file agent.
+func (s *WorkspaceService) clusterFileAgentURL(workspaceID string) string {
+	return "http://" + workspaceID + "." + s.namespace + ".svc.cluster.local:8081"
 }

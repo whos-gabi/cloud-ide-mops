@@ -34,11 +34,20 @@ Testele sunt implementate în [cmd/main_test.go]
 
 | Test | Comportament verificat |
 |---|---|
-| `TestNewRouterHealth` | `GET /health` returnează `200 OK` și `Up` |
+| `TestNewRouterHealth` | `GET /health` returnează `200 OK` și `Up`, fără token |
+| `TestRouterRejectsRequestsWithoutTheToken` | Fără token sau cu token greșit: `401`, service-ul nu e apelat |
+| `TestRouterWithEmptyTokenRejectsEverything` | Un token gol în configurație nu deschide API-ul |
+| `TestRouterRejectsWorkspaceIDsOutsideItsOwn` | Nume ca `backend` sau `postgres` returnează `400` |
 | `TestCreateWorkspaceHandler` | Un workspace valid returnează `201 Created` |
 | `TestCreateWorkspaceHandlerRejectsInvalidJSON` | JSON-ul invalid returnează `400 Bad Request` |
+| `TestCreateWorkspaceHandlerRejectsInvalidIDs` | `workspaceID`/`userID` invalide returnează `400` |
+| `TestCreateWorkspaceHandlerReportsExistingWorkspaceAsConflict` | Un workspace existent returnează `409` |
+| `TestDeleteWorkspaceHandler` | `DELETE /workspaces/{id}` returnează `204` |
+| `TestStartWorkspaceHandlerReportsMissingWorkspaceAsNotFound` | Un workspace inexistent returnează `404` |
 | `TestReadFileHandler` | Citirea unui fișier returnează conținutul corect |
 | `TestListFilesHandlerReturnsJSON` | Lista de fișiere este serializată corect în JSON |
+| `TestFileHandlersForwardTheFileAgentStatus` | `400`, `404`, `409`, `413` de la File Agent ajung neschimbate |
+| `TestFileHandlersReportAnUnreachableWorkspaceAsUnavailable` | Un workspace oprit returnează `503` |
 | `TestFileContentHandlerReturnsServerError` | Erorile de stocare returnează `500 Internal Server Error` |
 
 ## Teste Workspace Service
@@ -52,9 +61,13 @@ Sunt verificate operațiile:
 - actualizare fișier;
 - ștergere fișier;
 - creare director;
-- listare fișiere.
+- listare fișiere;
+- crearea resurselor, cu label-uri și fără token Kubernetes în pod (`TestCreateWorkspaceCreatesLabeledResources`);
+- ștergerea completă, și a unui workspace creat pe jumătate (`TestDeleteWorkspaceRemovesEverythingAndToleratesMissingParts`);
+- erorile File Agent devin `StatusError` cu statusul lui, iar un File Agent care nu răspunde devine `ErrUnavailable`;
+- formatul `workspaceID` (`TestValidWorkspaceID`).
 
-Testele verifică erori descriptive și păstrează service-ul izolat de un cluster Kubernetes pentru testele unitare.
+Testele verifică erori descriptive și păstrează service-ul izolat de un cluster Kubernetes pentru testele unitare: resursele se verifică pe clientul fals din `k8s.io/client-go/kubernetes/fake`, iar File Agent e înlocuit cu un server `httptest`.
 
 Rulare:
 

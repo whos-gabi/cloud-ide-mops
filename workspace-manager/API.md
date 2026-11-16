@@ -12,20 +12,32 @@ Kubernetes. Fiecare workspace conține:
 
 Backend-ul Workspace Manager ascultă pe portul `8080`.
 
-În configurația actuală nu există autentificare sau token-uri.
+## Autentificare
+
+Toate endpoint-urile, în afară de `GET /health`, cer header-ul:
+
+```text
+Authorization: Bearer <token>
+```
+
+Token-ul vine din variabila `WORKSPACE_MANAGER_TOKEN`. În cluster, `scripts/deploy.sh`
+îl generează o singură dată în secretul `workspace-manager-token` (cheia `token`),
+iar Workspace Manager și backend-ul îl citesc de acolo. Fără variabilă, serviciul nu
+pornește. Un request fără token sau cu token greșit primește `401 Unauthorized`.
 
 ## URL de bază
 
 În cluster, backend-ul poate fi accesat prin Service-ul său:
 
 ```text
-http://workspacemanager:8080
+http://workspace-manager:8080
 ```
 
 Pentru testare locală:
 
 ```bash
-kubectl port-forward service/workspacemanager 8080:8080
+kubectl -n cloud-ide port-forward service/workspace-manager 8080:8080
+TOKEN=$(kubectl -n cloud-ide get secret workspace-manager-token -o jsonpath='{.data.token}' | base64 -d)
 ```
 
 URL-ul de bază devine:
@@ -47,16 +59,21 @@ Este folosit ca:
 - prefix pentru PVC (`<workspaceID>-pvc`);
 - nume DNS intern pentru File Agent.
 
-Trebuie să fie compatibil cu numele resurselor Kubernetes, de exemplu:
+Trebuie să înceapă cu `ws-`, urmat de litere mici, cifre și `-` (fără `-` la final),
+cel mult 51 de caractere în total, de exemplu:
 
 ```text
-workspace-123
+ws-123
 ```
+
+Orice alt nume primește `400 Bad Request`. Astfel serviciul nu poate atinge alte
+resurse din namespace (backend, frontend, postgres).
 
 ### `userID`
 
 Identificatorul utilizatorului care deține workspace-ul. Este salvat ca label
-Kubernetes și este trimis la crearea workspace-ului.
+Kubernetes și este trimis la crearea workspace-ului, deci trebuie să fie o valoare
+validă de label (de exemplu un UUID); altfel răspunsul e `400 Bad Request`.
 
 ### `path`
 
@@ -106,7 +123,7 @@ Body:
 
 ```json
 {
-  "workspaceID": "workspace-123",
+  "workspaceID": "ws-123",
   "userID": "user-456"
 }
 ```
@@ -120,8 +137,24 @@ Răspuns:
 Operația creează:
 
 1. PVC-ul `<workspaceID>-pvc`;
-2. Deployment-ul `<workspaceID>`;
+2. Deployment-ul `<workspaceID>`, pornit (`replicas=1`);
 3. Service-ul `<workspaceID>`.
+
+Toate au label-ul `app.kubernetes.io/managed-by: workspace-manager`. Pod-urile nu
+primesc token pentru API-ul Kubernetes. Dacă workspace-ul există deja: `409 Conflict`.
+
+### Ștergere workspace
+
+```http
+DELETE /workspaces/{workspaceID}
+```
+
+Șterge Deployment-ul, Service-ul și PVC-ul, deci și fișierele. Părțile care lipsesc
+deja sunt ignorate, așa că poate curăța și un workspace creat pe jumătate.
+
+```text
+204 No Content
+```
 
 ### Pornire workspace
 
@@ -129,7 +162,7 @@ Operația creează:
 POST /workspaces/{workspaceID}/start
 ```
 
-Setează Deployment-ul la `replicas=1`.
+Setează Deployment-ul la `replicas=1`. Dacă workspace-ul nu există: `404 Not Found`.
 
 Răspuns:
 
@@ -274,76 +307,82 @@ POST /workspaces/{workspaceID}/directories?path=src
 201 Created
 ```
 
-## Exemple pentru frontend
+## Exemple pentru backend
+
+Serviciul e doar pentru backend: browser-ul nu are acces la el și nu are token-ul.
 
 ```javascript
-const baseURL = "http://127.0.0.1:8080";
-const workspaceID = "workspace-123";
+const baseURL = "http://workspace-manager:8080";
+const headers = { Authorization: `Bearer ${process.env.WORKSPACE_MANAGER_TOKEN}` };
+const workspaceID = "ws-123";
 
 await fetch(`${baseURL}/workspaces/${workspaceID}/start`, {
   method: "POST",
+  headers,
 });
 
 const response = await fetch(
   `${baseURL}/workspaces/${workspaceID}/files?path=README.md`,
+  { headers },
 );
 const content = await response.text();
 ```
 
-Pentru upload:
+## Exemple cu curl
 
-```javascript
-await fetch(
-  `${baseURL}/workspaces/${workspaceID}/files?path=README.md`,
-  {
-    method: "PUT",
-    body: "# Workspace",
-  },
-);
-```
-
-## Exemple pentru backend/integration tests
+`TOKEN` ca la „Pentru testare locală” de mai sus.
 
 ```bash
 curl -i http://127.0.0.1:8080/health
 
 curl -i -X POST http://127.0.0.1:8080/workspaces \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"workspaceID":"workspace-123","userID":"user-456"}'
+  -d '{"workspaceID":"ws-123","userID":"user-456"}'
 
-curl -i http://127.0.0.1:8080/workspaces/workspace-123/status
+curl -i -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8080/workspaces/ws-123/status
 
-curl -i -X POST \
-  http://127.0.0.1:8080/workspaces/workspace-123/directories?path=src
+curl -i -X POST -H "Authorization: Bearer $TOKEN" \
+  'http://127.0.0.1:8080/workspaces/ws-123/directories?path=src'
 
-curl -i -X POST \
-  http://127.0.0.1:8080/workspaces/workspace-123/files?path=README.md \
+curl -i -X POST -H "Authorization: Bearer $TOKEN" \
+  'http://127.0.0.1:8080/workspaces/ws-123/files?path=README.md' \
   --data '# Workspace'
 
-curl -iG \
-  http://127.0.0.1:8080/workspaces/workspace-123/files/list \
+curl -iG -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8080/workspaces/ws-123/files/list \
   --data-urlencode 'path=src'
 
-curl -i \
-  http://127.0.0.1:8080/workspaces/workspace-123/files?path=README.md
+curl -i -H "Authorization: Bearer $TOKEN" \
+  'http://127.0.0.1:8080/workspaces/ws-123/files?path=README.md'
 
-curl -i -X PUT \
-  http://127.0.0.1:8080/workspaces/workspace-123/files?path=README.md \
+curl -i -X PUT -H "Authorization: Bearer $TOKEN" \
+  'http://127.0.0.1:8080/workspaces/ws-123/files?path=README.md' \
   --data '# Updated workspace'
 
-curl -i -X DELETE \
-  http://127.0.0.1:8080/workspaces/workspace-123/files?path=README.md
+curl -i -X DELETE -H "Authorization: Bearer $TOKEN" \
+  'http://127.0.0.1:8080/workspaces/ws-123/files?path=README.md'
+
+curl -i -X DELETE -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8080/workspaces/ws-123
 ```
 
 ## Erori
 
-În forma actuală:
+Corpul răspunsului de eroare este un mesaj text.
 
-- body JSON invalid la creare workspace: `400 Bad Request`;
-- erorile de Kubernetes sau File Agent sunt returnate de handler-ele
-  Workspace Manager ca `500 Internal Server Error`;
-- File Agent poate furniza mesaje mai precise, precum `404`, `409` sau
-  `400`, dar acestea sunt momentan împachetate de backend ca eroare `500`.
+| Status | Când |
+|---|---|
+| `400 Bad Request` | body JSON invalid, `workspaceID` sau `userID` invalid, cale invalidă (File Agent) |
+| `401 Unauthorized` | lipsește token-ul sau e greșit |
+| `404 Not Found` | workspace-ul (Deployment-ul) nu există, fișierul sau directorul nu există (File Agent) |
+| `409 Conflict` | workspace-ul există deja, fișierul sau directorul există deja (File Agent) |
+| `413 Request Entity Too Large` | fișier peste 10 MB (File Agent) |
+| `503 Service Unavailable` | File Agent nu răspunde: workspace-ul e oprit sau încă pornește |
+| `500 Internal Server Error` | orice altă eroare de Kubernetes sau de File Agent |
+
+Pentru erorile File Agent, statusul și mesajul lui sunt transmise mai departe neschimbate.
 
 ## Arhitectura internă
 
@@ -362,8 +401,9 @@ Runtime-ul de limbaj și File Agent folosesc același PVC montat la
 
 ## Limitări actuale
 
-- Nu există autentificare.
-- Nu există endpoint pentru ștergerea completă a workspace-ului.
+- File Agent nu are autentificare: din cluster (inclusiv din alt workspace) poate
+  fi apelat direct pe portul `8081`. Izolarea între workspace-uri (US18) va cere
+  NetworkPolicy.
 - Nu există endpoint HTTP pentru `exec`; execuțiile trebuie implementate prin
   Kubernetes API `pods/exec`.
 - Service-ul Workspace Manager trebuie să aibă RBAC pentru resursele din

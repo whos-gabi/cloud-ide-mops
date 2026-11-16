@@ -4,16 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/whos-gabi/cloud-ide-mops/workspace-manager/internal/workspace"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
+
+const testToken = "test-token"
 
 type fakeWorkspaceService struct {
 	createWorkspace func(context.Context, workspace.CreateWorkspaceRequest) error
+	deleteWorkspace func(context.Context, string) error
 	startWorkspace  func(context.Context, string) error
 	readFile        func(context.Context, string, string) ([]byte, error)
 	listFiles       func(context.Context, string, string) (*workspace.FileNode, error)
@@ -22,6 +29,10 @@ type fakeWorkspaceService struct {
 
 func (f *fakeWorkspaceService) CreateWorkspace(ctx context.Context, req workspace.CreateWorkspaceRequest) error {
 	return f.createWorkspace(ctx, req)
+}
+
+func (f *fakeWorkspaceService) DeleteWorkspace(ctx context.Context, id string) error {
+	return f.deleteWorkspace(ctx, id)
 }
 
 func (f *fakeWorkspaceService) StartWorkspace(ctx context.Context, id string) error {
@@ -47,9 +58,19 @@ func (f *fakeWorkspaceService) RenameFile(context.Context, string, string, strin
 func (f *fakeWorkspaceService) MoveFile(context.Context, string, string, string) error   { return nil }
 func (f *fakeWorkspaceService) CreateDirectory(context.Context, string, string) error    { return nil }
 
-func TestNewRouterHealth(t *testing.T) {
-	r := newRouter(&fakeWorkspaceService{})
+// serve sends a request with the right token through the router.
+func serve(service workspaceService, method, target string, body io.Reader) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, target, body)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	newRouter(service, testToken).ServeHTTP(rec, req)
+	return rec
+}
 
+func TestNewRouterHealth(t *testing.T) {
+	r := newRouter(&fakeWorkspaceService{}, testToken)
+
+	// No token: the readiness and liveness probes call it without one.
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -59,6 +80,79 @@ func TestNewRouterHealth(t *testing.T) {
 	}
 	if got := rec.Body.String(); got != "Up" {
 		t.Fatalf("expected body %q, got %q", "Up", got)
+	}
+}
+
+func TestRouterRejectsRequestsWithoutTheToken(t *testing.T) {
+	called := false
+	service := &fakeWorkspaceService{
+		startWorkspace: func(context.Context, string) error {
+			called = true
+			return nil
+		},
+		createWorkspace: func(context.Context, workspace.CreateWorkspaceRequest) error {
+			called = true
+			return nil
+		},
+	}
+
+	for _, header := range []string{"", testToken, "Bearer wrong", "Bearer " + testToken + "x", "bearer " + testToken} {
+		for _, target := range []string{"/workspaces", "/workspaces/ws-1/start"} {
+			req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(`{"workspaceID":"ws-1","userID":"u"}`))
+			if header != "" {
+				req.Header.Set("Authorization", header)
+			}
+			rec := httptest.NewRecorder()
+			newRouter(service, testToken).ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s with Authorization %q: expected status %d, got %d", target, header, http.StatusUnauthorized, rec.Code)
+			}
+		}
+	}
+	if called {
+		t.Fatal("service was called without a valid token")
+	}
+}
+
+func TestRouterWithEmptyTokenRejectsEverything(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/workspaces/ws-1/start", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	rec := httptest.NewRecorder()
+	newRouter(&fakeWorkspaceService{}, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}
+
+func TestRouterRejectsWorkspaceIDsOutsideItsOwn(t *testing.T) {
+	called := false
+	service := &fakeWorkspaceService{
+		startWorkspace: func(context.Context, string) error {
+			called = true
+			return nil
+		},
+		deleteWorkspace: func(context.Context, string) error {
+			called = true
+			return nil
+		},
+	}
+
+	long := "ws-" + strings.Repeat("a", 49)
+	for _, id := range []string{"backend", "postgres", "workspace-manager", "ws-", "ws-Upper", "ws-a_b", "ws-a-", long} {
+		for _, call := range []struct{ method, target string }{
+			{http.MethodPost, "/workspaces/" + id + "/start"},
+			{http.MethodDelete, "/workspaces/" + id},
+		} {
+			rec := serve(service, call.method, call.target, nil)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s %s: expected status %d, got %d", call.method, call.target, http.StatusBadRequest, rec.Code)
+			}
+		}
+	}
+	if called {
+		t.Fatal("service was called with an invalid workspace id")
 	}
 }
 
@@ -72,9 +166,7 @@ func TestCreateWorkspaceHandler(t *testing.T) {
 	}
 
 	body := `{"workspaceID":"ws-1","userID":"user-1"}`
-	req := httptest.NewRequest(http.MethodPost, "/workspaces", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	newRouter(service).ServeHTTP(rec, req)
+	rec := serve(service, http.MethodPost, "/workspaces", strings.NewReader(body))
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, rec.Code)
@@ -85,12 +177,82 @@ func TestCreateWorkspaceHandler(t *testing.T) {
 }
 
 func TestCreateWorkspaceHandlerRejectsInvalidJSON(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/workspaces", strings.NewReader("{"))
-	rec := httptest.NewRecorder()
-	newRouter(&fakeWorkspaceService{}).ServeHTTP(rec, req)
+	rec := serve(&fakeWorkspaceService{}, http.MethodPost, "/workspaces", strings.NewReader("{"))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestCreateWorkspaceHandlerRejectsInvalidIDs(t *testing.T) {
+	service := &fakeWorkspaceService{
+		createWorkspace: func(context.Context, workspace.CreateWorkspaceRequest) error {
+			t.Fatal("service was called with an invalid id")
+			return nil
+		},
+	}
+
+	for _, body := range []string{
+		`{"workspaceID":"backend","userID":"user-1"}`,
+		`{"workspaceID":"","userID":"user-1"}`,
+		`{"workspaceID":"ws-1","userID":""}`,
+		`{"workspaceID":"ws-1","userID":"not a label"}`,
+	} {
+		rec := serve(service, http.MethodPost, "/workspaces", strings.NewReader(body))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected status %d, got %d", body, http.StatusBadRequest, rec.Code)
+		}
+	}
+}
+
+func TestCreateWorkspaceHandlerReportsExistingWorkspaceAsConflict(t *testing.T) {
+	service := &fakeWorkspaceService{
+		createWorkspace: func(context.Context, workspace.CreateWorkspaceRequest) error {
+			return fmt.Errorf("Error creating PVC: %w", apierrors.NewAlreadyExists(
+				schema.GroupResource{Resource: "persistentvolumeclaims"}, "ws-1-pvc",
+			))
+		},
+	}
+
+	rec := serve(service, http.MethodPost, "/workspaces", strings.NewReader(`{"workspaceID":"ws-1","userID":"u"}`))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestDeleteWorkspaceHandler(t *testing.T) {
+	var got string
+	service := &fakeWorkspaceService{
+		deleteWorkspace: func(_ context.Context, id string) error {
+			got = id
+			return nil
+		},
+	}
+
+	rec := serve(service, http.MethodDelete, "/workspaces/ws-1", nil)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+	if got != "ws-1" {
+		t.Fatalf("expected workspace %q, got %q", "ws-1", got)
+	}
+}
+
+func TestStartWorkspaceHandlerReportsMissingWorkspaceAsNotFound(t *testing.T) {
+	service := &fakeWorkspaceService{
+		startWorkspace: func(context.Context, string) error {
+			return fmt.Errorf("error starting workspace: %w", apierrors.NewNotFound(
+				schema.GroupResource{Group: "apps", Resource: "deployments"}, "ws-1",
+			))
+		},
+	}
+
+	rec := serve(service, http.MethodPost, "/workspaces/ws-1/start", nil)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }
 
@@ -104,9 +266,7 @@ func TestReadFileHandler(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/workspaces/ws-1/files?path=README.md", nil)
-	rec := httptest.NewRecorder()
-	newRouter(service).ServeHTTP(rec, req)
+	rec := serve(service, http.MethodGet, "/workspaces/ws-1/files?path=README.md", nil)
 
 	if rec.Code != http.StatusOK || rec.Body.String() != "hello" {
 		t.Fatalf("expected 200 and body %q, got %d and %q", "hello", rec.Code, rec.Body.String())
@@ -124,9 +284,7 @@ func TestListFilesHandlerReturnsJSON(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/workspaces/ws-1/files/list?path=.", nil)
-	rec := httptest.NewRecorder()
-	newRouter(service).ServeHTTP(rec, req)
+	rec := serve(service, http.MethodGet, "/workspaces/ws-1/files/list?path=.", nil)
 
 	var got workspace.FileNode
 	if rec.Code != http.StatusOK {
@@ -137,6 +295,39 @@ func TestListFilesHandlerReturnsJSON(t *testing.T) {
 	}
 	if len(got.Children) != 1 || got.Children[0].Name != "main.go" {
 		t.Fatalf("unexpected files: %+v", got)
+	}
+}
+
+func TestFileHandlersForwardTheFileAgentStatus(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusRequestEntityTooLarge} {
+		service := &fakeWorkspaceService{
+			createFile: func(context.Context, string, string, []byte) error {
+				return fmt.Errorf(`create file "a.txt": %w`, &workspace.StatusError{Status: status, Message: "file agent says no"})
+			},
+		}
+
+		rec := serve(service, http.MethodPost, "/workspaces/ws-1/files?path=a.txt", strings.NewReader("x"))
+
+		if rec.Code != status {
+			t.Fatalf("expected status %d, got %d", status, rec.Code)
+		}
+		if got := strings.TrimSpace(rec.Body.String()); got != "file agent says no" {
+			t.Fatalf("expected the file agent's message, got %q", got)
+		}
+	}
+}
+
+func TestFileHandlersReportAnUnreachableWorkspaceAsUnavailable(t *testing.T) {
+	service := &fakeWorkspaceService{
+		readFile: func(context.Context, string, string) ([]byte, error) {
+			return nil, fmt.Errorf(`read file "a.txt": %w: %w`, workspace.ErrUnavailable, errors.New("connection refused"))
+		},
+	}
+
+	rec := serve(service, http.MethodGet, "/workspaces/ws-1/files?path=a.txt", nil)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, rec.Code)
 	}
 }
 
