@@ -16,6 +16,11 @@ export class SessionService {
     return { token, expiresAt }
   }
 
+  // US03. Only this session; the user stays logged in on other devices.
+  async end(token: string): Promise<void> {
+    await sessionRepository.deleteByTokenHash(hashSessionToken(token))
+  }
+
   async findUser(token: string): Promise<User | null> {
     const session = await sessionRepository.findActive(hashSessionToken(token))
     return session?.user ?? null

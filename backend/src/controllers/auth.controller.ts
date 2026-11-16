@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { authService } from '../services/auth.service.js'
-import { setSessionCookie } from '../utils/session-cookie.js'
+import { sessionService } from '../services/session.service.js'
+import { clearSessionCookie, readSessionToken, setSessionCookie } from '../utils/session-cookie.js'
 import { loginSchema, registerSchema } from '../validators/auth.validator.js'
 import { validate } from '../validators/validate.js'
 import { toUserView } from '../views/user.view.js'
@@ -23,4 +24,12 @@ export async function login(req: Request, res: Response): Promise<void> {
 // GET /api/auth/me (behind requireAuth)
 export function me(req: Request, res: Response): void {
   res.json({ user: toUserView(req.user!) })
+}
+
+// POST /api/auth/logout. Always succeeds, even without a (valid) session.
+export async function logout(req: Request, res: Response): Promise<void> {
+  const token = readSessionToken(req)
+  if (token) await sessionService.end(token)
+  clearSessionCookie(res)
+  res.status(204).end()
 }

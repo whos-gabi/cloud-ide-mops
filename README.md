@@ -84,8 +84,9 @@ Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator
 | `POST /api/auth/register` | US01 | `{ email, password }` | `201 { user }` · `400 VALIDATION_ERROR` · `409 EMAIL_TAKEN` |
 | `POST /api/auth/login` | US02 | `{ email, password }` | `200 { user }` + cookie `sid` · `401 INVALID_CREDENTIALS` |
 | `GET /api/auth/me` | US02 | – | `200 { user }` · `401 UNAUTHENTICATED` |
+| `POST /api/auth/logout` | US03 | – | `204`, șterge sesiunea și cookie-ul (reușește și fără sesiune) |
 
-Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare.
+Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare. Răspunsurile lor au `Cache-Control: no-store`, ca butonul Back să nu mai arate date după deconectare. Deconectarea închide doar sesiunea de pe dispozitivul curent.
 
 ## Cum ajunge codul live
 

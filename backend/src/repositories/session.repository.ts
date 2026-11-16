@@ -10,6 +10,10 @@ export class SessionRepository {
     return sessions.save(sessions.create(data))
   }
 
+  async deleteByTokenHash(tokenHash: string): Promise<void> {
+    await dataSource.getRepository(Session).delete({ tokenHash })
+  }
+
   // Unexpired session for this token hash, with its user.
   async findActive(tokenHash: string): Promise<Session | null> {
     return dataSource.getRepository(Session).findOne({
