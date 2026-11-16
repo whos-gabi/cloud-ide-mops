@@ -228,6 +228,14 @@ describe('POST /api/projects/:projectId/files', () => {
       })
     }
 
+    it('treats the same name typed with a combining accent as the same name', async () => {
+      const project = await newProject()
+      assert.equal((await create(project, { name: 'Temă.py'.normalize('NFC'), type: 'file' })).status, 201)
+      const res = await create(project, { name: 'Temă.py'.normalize('NFD'), type: 'file' })
+      assert.equal(res.status, 409)
+      assert.deepEqual(await names(project), ['main.py', 'Temă.py'])
+    })
+
     it('allows the same name in different directories', async () => {
       const project = await newProject()
       await create(project, { name: 'src', type: 'directory' })
@@ -351,6 +359,21 @@ describe('access and failures', () => {
     assert.equal((await call(null, 'POST', filesUrl(project), { name: 'x', type: 'file' })).status, 401)
     assert.equal((await call(null, 'DELETE', filesUrl(project, { path: 'main.py', type: 'file' }))).status, 401)
     assert.deepEqual([...project.workspace.files.keys()], ['main.py'])
+  })
+
+  it('does not pass other workspace-manager errors (like its 401) on to the browser', async () => {
+    const project = await newProject()
+    for (const status of [401, 403, 405, 500]) {
+      workspaces.failNext('GET', '/files/list', status)
+      const res = await list(project)
+      assert.equal(res.status, 502, String(status))
+      assert.deepEqual(await res.json(), {
+        error: 'Mediul de lucru al proiectului a răspuns cu o eroare. Încearcă din nou.',
+        code: 'WORKSPACE_ERROR',
+      })
+    }
+    // The user's session is untouched.
+    assert.equal((await call(project.owner, 'GET', '/api/auth/me')).status, 200)
   })
 
   it('answers 503 while the workspace does not respond', async () => {

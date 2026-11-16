@@ -6,11 +6,14 @@ import { isValidPath, type CreateEntryInput, type DeleteEntryInput } from '../va
 import type { FileEntryView } from '../views/file.view.js'
 
 const NAME_TAKEN = 'Există deja un element cu acest nume.'
+// One collator for every comparison: creating one per call is slow on big directories.
+const byName = new Intl.Collator('ro', { sensitivity: 'base', numeric: true })
 
 const joinPath = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
 
 // Turns workspace-manager's answer into one for the user. `notFound` says
-// what was missing in this operation.
+// what was missing in this operation. Its status never reaches the browser
+// as is: e.g. its 401 (token out of sync) would look like a lost session.
 function toHttpError(err: unknown, notFound: string): unknown {
   if (!(err instanceof WorkspaceManagerError)) return err
   switch (err.status) {
@@ -28,7 +31,8 @@ function toHttpError(err: unknown, notFound: string): unknown {
         'Mediul de lucru al proiectului nu răspunde acum. Încearcă din nou peste câteva secunde.',
       )
     default:
-      return err
+      console.error('workspace-manager error:', err)
+      return new HttpError(502, 'WORKSPACE_ERROR', 'Mediul de lucru al proiectului a răspuns cu o eroare. Încearcă din nou.')
   }
 }
 
@@ -54,7 +58,7 @@ export class FileService {
       .sort(
         (a, b) =>
           Number(b.type === 'directory') - Number(a.type === 'directory') ||
-          a.name.localeCompare(b.name, 'ro', { sensitivity: 'base', numeric: true }) ||
+          byName.compare(a.name, b.name) ||
           a.name.localeCompare(b.name),
       )
   }

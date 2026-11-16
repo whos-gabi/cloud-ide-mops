@@ -34,6 +34,8 @@ export const createEntrySchema = z.object({
   name: z
     .string({ error: NAME_REQUIRED })
     .trim()
+    // "ă" typed as one character or as "a" + accent is the same name.
+    .normalize('NFC')
     .min(1, { error: NAME_REQUIRED })
     .refine((name) => !name.includes('/') && !name.includes('\\'), { error: 'Numele nu poate conține „/” sau „\\”.' })
     .refine((name) => name !== '.' && name !== '..', { error: 'Numele nu poate fi „.” sau „..”.' })

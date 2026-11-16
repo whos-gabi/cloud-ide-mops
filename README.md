@@ -98,13 +98,13 @@ Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator
 | `GET /api/projects` | US04 | – | `200 { projects }`, ale utilizatorului, cele modificate recent primele |
 | `POST /api/projects` | US04 | `{ name, language }` | `201 { project }` · `400 VALIDATION_ERROR` · `409 PROJECT_NAME_TAKEN` · `409 PROJECT_LIMIT_REACHED` · `503 WORKSPACE_UNAVAILABLE` |
 | `GET /api/projects/:projectId` | US08 | – | `200 { project }` · `404 PROJECT_NOT_FOUND` |
-| `GET /api/projects/:projectId/files?path=` | US08 | – | `200 { path, entries }`, un singur nivel, directoarele primele · `404 PATH_NOT_FOUND` · `503 WORKSPACE_UNAVAILABLE` |
-| `POST /api/projects/:projectId/files` | US08 | `{ parent, name, type }` | `201 { entry }` · `400 VALIDATION_ERROR` · `404 PATH_NOT_FOUND` · `409 NAME_TAKEN` · `503` |
-| `DELETE /api/projects/:projectId/files?path=&type=` | US08 | – | `204`; un director se șterge cu tot conținutul · `404 PATH_NOT_FOUND` · `503` |
+| `GET /api/projects/:projectId/files?path=` | US08 | – | `200 { path, entries }`, un singur nivel, directoarele primele · `400 VALIDATION_ERROR` · `404 PATH_NOT_FOUND` · `503 WORKSPACE_UNAVAILABLE` |
+| `POST /api/projects/:projectId/files` | US08 | `{ parent, name, type }` | `201 { entry }` · `400 VALIDATION_ERROR` · `400 INVALID_PATH` · `404 PATH_NOT_FOUND` · `409 NAME_TAKEN` · `503` |
+| `DELETE /api/projects/:projectId/files?path=&type=` | US08 | – | `204`; un director se șterge cu tot conținutul · `400 VALIDATION_ERROR` · `400 INVALID_PATH` · `404 PATH_NOT_FOUND` · `503` |
 
 Un proiect are `language` unul dintre `python`, `javascript`, `java`, `cpp`, iar numele (cel mult 100 de caractere, fără caractere invizibile) e unic printre proiectele utilizatorului, fără să conteze literele mari. Un utilizator poate avea cel mult 10 proiecte (`config.projects.maxPerUser`), pentru că fiecare ține un workspace pe server. La creare, backend-ul îi face proiectului un workspace prin `workspace-manager` și scrie în el fișierul inițial: `main.py`, `index.js`, `Main.java` sau `main.cpp`. Răspunde abia după aceea, de obicei în câteva secunde. Dacă workspace-ul nu pornește în 60 s, proiectul și workspace-ul se șterg și răspunsul e `503`.
 
-Fișierele unui proiect (US08) sunt în workspace-ul lui. Căile sunt relative la rădăcina proiectului (`src/main.py`; `""` e rădăcina) și nu pot ieși din ea. `type` e `file` sau `directory`, iar un element de oricare tip blochează numele în directorul lui. Un proiect al altui utilizator primește `404 PROJECT_NOT_FOUND`, la fel ca unul care nu există. Crearea și ștergerea actualizează „ultima modificare” a proiectului.
+Fișierele unui proiect (US08) sunt în workspace-ul lui. Căile sunt relative la rădăcina proiectului (`src/main.py`; `""` e rădăcina) și nu pot ieși din ea. `type` e `file` sau `directory`, iar un element de oricare tip blochează numele în directorul lui. `400 INVALID_PATH` înseamnă că părintele e un fișier sau că `type` nu se potrivește cu ce e pe disc. Alte erori ale mediului de lucru devin `502 WORKSPACE_ERROR`. Un proiect al altui utilizator primește `404 PROJECT_NOT_FOUND`, la fel ca unul care nu există. Crearea și ștergerea actualizează „ultima modificare” a proiectului.
 
 Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare. Răspunsurile lor au `Cache-Control: no-store`, ca butonul Back să nu mai arate date după deconectare. Deconectarea închide doar sesiunea de pe dispozitivul curent.
 
@@ -136,6 +136,9 @@ Reguli pentru deploy:
   Token-ul e în secretul `workspace-manager-token`, creat de `deploy.sh` la primul deploy.
   Workspace Manager acceptă doar workspace-uri cu numele `ws-...`, deci nu poate atinge
   backend-ul, frontend-ul sau baza de date.
+- Imaginea `cloud-ide-file-agent` are ca tag hash-ul directorului `workspace-manager/file-agent`,
+  deci se schimbă doar când se schimbă codul lui. Atunci `deploy.sh` actualizează și
+  workspace-urile existente (`kubectl set image`): pod-urile lor repornesc, fișierele rămân.
 - `scripts/deploy.sh` construiește și importă imaginile `cloud-ide-workspace-manager`,
   `cloud-ide-file-agent` și runtime-ul `cloudcode:dev` din
   `workspace-runtime/Dockerfile`. Runtime-ul poate fi înlocuit prin variabila
