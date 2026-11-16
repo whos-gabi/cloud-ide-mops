@@ -13,4 +13,6 @@ export interface ApiErrorPayload {
   code?: string
   message?: string
   error?: string
+  /** Mesaje de eroare pe câmp, ex. { name: 'Ai deja un proiect cu acest nume.' } */
+  fields?: Record<string, string>
 }

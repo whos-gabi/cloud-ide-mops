@@ -36,6 +36,14 @@ cd frontend && npm install && npm run dev    # http://localhost:5173
 
 În dev, frontend-ul trimite `/api` mai departe la backend-ul local, deci nu ai probleme cu CORS.
 
+Proiectele (US04) au nevoie de `workspace-manager`, care rulează doar în Kubernetes. Local pornești, într-un al treilea terminal, o versiune falsă, în memorie, pe care backend-ul o folosește implicit:
+
+```bash
+cd backend && npm run dev:workspace-manager  # http://localhost:8080
+```
+
+Ține fișierele proiectelor doar cât rulează; după repornire, proiectele vechi nu mai au fișiere.
+
 La pornire, backend-ul așteaptă baza de date și aplică singur migrările noi. Testele (`cd backend && npm test`) rulează pe aceeași bază locală.
 
 ## Backend: structură (MVC)
@@ -47,6 +55,7 @@ backend/src/
   models/        entitățile TypeORM (un fișier *.model.ts pe tabel)
   repositories/  interogările pe baza de date
   services/      regulile de business
+  clients/       apelurile către alte servicii (workspace-manager)
   validators/    validarea body-ului (zod), cu mesaje pentru fiecare câmp
   views/         ce returnează API-ul (ex. user fără parolă)
   controllers/   handler-ele pentru request-uri
@@ -86,6 +95,10 @@ Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator
 | `POST /api/auth/login` | US02 | `{ email, password }` | `200 { user }` + cookie `sid` · `401 INVALID_CREDENTIALS` |
 | `GET /api/auth/me` | US02 | – | `200 { user }` · `401 UNAUTHENTICATED` |
 | `POST /api/auth/logout` | US03 | – | `204`, șterge sesiunea și cookie-ul (reușește și fără sesiune) |
+| `GET /api/projects` | US04 | – | `200 { projects }`, ale utilizatorului, cele modificate recent primele |
+| `POST /api/projects` | US04 | `{ name, language }` | `201 { project }` · `400 VALIDATION_ERROR` · `409 PROJECT_NAME_TAKEN` · `409 PROJECT_LIMIT_REACHED` · `503 WORKSPACE_UNAVAILABLE` |
+
+Un proiect are `language` unul dintre `python`, `javascript`, `java`, `cpp`, iar numele (cel mult 100 de caractere, fără caractere invizibile) e unic printre proiectele utilizatorului, fără să conteze literele mari. Un utilizator poate avea cel mult 10 proiecte (`config.projects.maxPerUser`), pentru că fiecare ține un workspace pe server. La creare, backend-ul îi face proiectului un workspace prin `workspace-manager` și scrie în el fișierul inițial: `main.py`, `index.js`, `Main.java` sau `main.cpp`. Răspunde abia după aceea, de obicei în câteva secunde. Dacă workspace-ul nu pornește în 60 s, proiectul și workspace-ul se șterg și răspunsul e `503`.
 
 Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare. Răspunsurile lor au `Cache-Control: no-store`, ca butonul Back să nu mai arate date după deconectare. Deconectarea închide doar sesiunea de pe dispozitivul curent.
 

@@ -11,6 +11,9 @@ spec:
     metadata:
       labels: { app: backend }
     spec:
+      # Creating a project can take ~100 s (workspace start plus rollback);
+      # let requests in flight finish during a rollout instead of being killed.
+      terminationGracePeriodSeconds: 120
       containers:
         - name: backend
           image: cloud-ide-backend
@@ -24,6 +27,12 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef: { name: postgres-credentials, key: database-url }
+            # Projects' workspaces (US04). Same token as workspace-manager.yaml.
+            - name: WORKSPACE_MANAGER_URL
+              value: http://workspace-manager:8080
+            - name: WORKSPACE_MANAGER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: workspace-manager-token, key: token }
           # Keep serving for a few seconds after Traefik is told to stop routing here,
           # so rollouts don't drop requests.
           lifecycle:

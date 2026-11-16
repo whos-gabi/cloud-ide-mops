@@ -220,6 +220,34 @@ jobs:
           echo "Rehearsal deploy is not serving $GITHUB_SHA after 120s"
           exit 1
 
+      # US04 end to end: the backend gets a real workspace (pod, volume, file
+      # agent) from workspace-manager and writes the starter file into it.
+      - name: Create a project through the ingress
+        run: |
+          api() { curl -sS --max-time 90 -H 'Host: ide.filegrid.cc.cd' -H 'Content-Type: application/json' "$@"; }
+          credentials="{\"email\":\"rehearsal-$GITHUB_RUN_ID@example.com\",\"password\":\"parola-buna\"}"
+          code=$(api -o /dev/null -w '%{http_code}' -d "$credentials" http://127.0.0.1/api/auth/register)
+          [ "$code" = 201 ] || { echo "::error::register answered $code"; exit 1; }
+          # The session cookie is Secure and this is plain http, so curl won't
+          # send it back by itself.
+          sid=$(api -D - -o /dev/null -d "$credentials" http://127.0.0.1/api/auth/login \
+            | sed -n 's/^[Ss]et-[Cc]ookie: sid=\([^;]*\);.*/\1/p')
+          [ -n "$sid" ] || { echo "::error::login set no session cookie"; exit 1; }
+
+          start=$(date +%s)
+          code=$(api -o "$RUNNER_TEMP/project.json" -w '%{http_code}' -H "Cookie: sid=$sid" \
+            -d '{"name":"Rehearsal","language":"python"}' http://127.0.0.1/api/projects)
+          echo "POST /api/projects answered $code after $(( $(date +%s) - start ))s: $(cat "$RUNNER_TEMP/project.json")"
+          [ "$code" = 201 ] || { echo "::error::creating a project answered $code"; exit 1; }
+          projects=$(api -H "Cookie: sid=$sid" http://127.0.0.1/api/projects)
+          [[ $projects == *'"name":"Rehearsal"'* ]] \
+            || { echo "::error::the new project is not in GET /api/projects: $projects"; exit 1; }
+
+          # The starter file is in the workspace's volume.
+          k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide "$@"; }
+          ws=$(k get deploy -l app.kubernetes.io/managed-by=workspace-manager -o jsonpath='{.items[0].metadata.name}')
+          k exec "deploy/$ws" -c workspace-runtime -- cat /workspace/main.py
+
       # Posted as annotations, so the reason shows on the PR's checks page
       # without opening the job log.
       - name: Cluster state (on failure)

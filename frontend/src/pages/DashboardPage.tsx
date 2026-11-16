@@ -1,10 +1,14 @@
 import { useState } from 'react'
+import { CreateProjectForm } from '../components/CreateProjectForm'
+import { ProjectList } from '../components/ProjectList'
 import { StatusBar } from '../components/StatusBar'
 import { useAuth } from '../context/AuthContext'
+import { useProjects } from '../hooks/useProjects'
 
 export function DashboardPage() {
   const { user, logout } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
+  const { projects, status, error, recentId, reload, addProject } = useProjects()
 
   if (!user) return null
 
@@ -18,7 +22,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="layout">
+    <div className="layout layout-wide">
       <header className="brand">
         <span className="brand-badge">&lt;/&gt; Workspace</span>
         <h1>Cloud IDE</h1>
@@ -58,6 +62,16 @@ export function DashboardPage() {
           {loggingOut ? 'Se deconectează...' : 'Deconectare'}
         </button>
       </main>
+
+      <ProjectList
+        projects={projects}
+        status={status}
+        error={error}
+        recentId={recentId}
+        onRetry={reload}
+      />
+
+      <CreateProjectForm onCreated={addProject} />
 
       <StatusBar />
     </div>
