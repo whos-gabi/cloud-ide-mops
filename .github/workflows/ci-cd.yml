@@ -117,7 +117,9 @@ jobs:
   deploy-rehearsal:
     name: Deploy rehearsal (k3s)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # Same Ubuntu as the server. On ubuntu-latest (26.04, kernel 7.0) postgres
+    # never starts: its entrypoint's gosu spins at 100% CPU.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       ADMIN_KUBECONFIG: /etc/rancher/k3s/k3s.yaml
