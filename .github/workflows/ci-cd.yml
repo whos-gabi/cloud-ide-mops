@@ -3,6 +3,8 @@ name: CI/CD
 on:
   pull_request:
     branches: [main]
+    # labeled: re-run the infra/ check when an admin adds infra-applied.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -85,10 +87,33 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+  # infra/ (the deploy account's permissions) is applied by hand on the server,
+  # never by CI. A PR that changes it stays red until an admin has applied it
+  # there and added the infra-applied label.
+  infra-check:
+    name: infra/ applied on the server
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      INFRA_APPLIED: ${{ contains(github.event.pull_request.labels.*.name, 'infra-applied') }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          git fetch --depth=1 origin "$BASE_SHA"
+          if git diff --quiet "$BASE_SHA" HEAD -- infra/; then
+            echo "infra/ unchanged."
+          elif [ "$INFRA_APPLIED" = "true" ]; then
+            echo "infra/ changed; the infra-applied label says an admin applied it on the server."
+          else
+            echo "::error title=Admin step needed::This PR changes infra/, which CI never applies to the server. An admin runs on the server, from this branch: sudo kubectl apply -f infra/cluster-setup.yaml. Then add the label infra-applied to this PR to re-run this check."
+            exit 1
+          fi
+
   # PRs only: runs the real deploy script against a throwaway k3s (same version as
-  # the server) with the same limited deploy account. Whatever would break the
-  # deploy after merge (a missing tool, a missing permission, a pod that never
-  # becomes ready) fails here, in the PR.
+  # the server), with the same limited deploy account, the same sudo rule and only
+  # the commands the server has. Whatever would break the deploy after merge (a
+  # missing tool, a missing permission, a pod that never becomes ready) fails here.
   deploy-rehearsal:
     name: Deploy rehearsal (k3s)
     if: github.event_name == 'pull_request'
@@ -96,20 +121,13 @@ jobs:
     timeout-minutes: 25
     env:
       ADMIN_KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      BASE_REF: ${{ github.base_ref }}
+      # The commands deploy.sh may use. Needs a new one? Install it on the server
+      # first, then add it here.
+      SERVER_TOOLS: >-
+        bash env dirname cat cp rm mkdir mktemp chmod id sed grep xargs head tail
+        git openssl sudo docker kubectl
     steps:
       - uses: actions/checkout@v7
-
-      # infra/ is applied by hand on the server, never by CI. The rehearsal below
-      # uses this PR's version, so remind that the server needs it too.
-      - name: Check for infra/ changes
-        run: |
-          git fetch --depth=1 origin "$BASE_REF"
-          if ! git diff --quiet FETCH_HEAD HEAD -- infra/; then
-            msg="This PR changes infra/. Before merging, an admin must run on the server: sudo kubectl apply -f infra/cluster-setup.yaml. Otherwise the deploy after merge fails."
-            echo "::warning title=Admin step needed before merge::$msg"
-            echo "### ⚠️ $msg" >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Start k3s (same version as the server)
         run: |
@@ -158,8 +176,30 @@ jobs:
           chmod 600 "$RUNNER_TEMP/deployer.yaml"
           echo "KUBECONFIG=$RUNNER_TEMP/deployer.yaml" >> "$GITHUB_ENV"
 
+      # GitHub's machine has Go, Node and more, and full sudo; the server doesn't.
+      - name: Make this machine look like the server
+        run: |
+          # The only sudo rule ghrunner has (infra/setup-runner.sh).
+          echo "$(id -un) ALL=(root) NOPASSWD: /usr/local/bin/k3s ctr -n k8s.io images import -" \
+            | sudo tee /etc/sudoers.d/zz-deploy >/dev/null
+          sudo chmod 440 /etc/sudoers.d/zz-deploy
+          sudo visudo -c >/dev/null
+          sudo sed -i '/NOPASSWD/d' /etc/sudoers
+          sudo grep -rl NOPASSWD /etc/sudoers.d | grep -v zz-deploy | xargs -r sudo rm -f
+          if sudo -n true 2>/dev/null; then
+            echo "::error::sudo is still unrestricted on this machine"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/server-bin"
+          for t in $SERVER_TOOLS; do
+            p=$(type -P "$t") || { echo "::error::$t is missing on this machine"; exit 1; }
+            ln -s "$p" "$RUNNER_TEMP/server-bin/$t"
+          done
+
       - name: Run the deploy script
-        run: ./scripts/deploy.sh "$GITHUB_SHA"
+        run: |
+          /usr/bin/env -i HOME="$HOME" KUBECONFIG="$KUBECONFIG" \
+            PATH="$RUNNER_TEMP/server-bin" ./scripts/deploy.sh "$GITHUB_SHA"
 
       - name: Smoke test through the ingress
         run: |
@@ -191,12 +231,21 @@ jobs:
             echo "::error title=$1::$body"
           }
           annotate "Pods" "$(k -n cloud-ide get pods -o wide)"
-          annotate "Recent events" "$(k -n cloud-ide get events --sort-by=.lastTimestamp | tail -25)"
+          annotate "Recent events" "$(k -n cloud-ide get events --sort-by=.lastTimestamp | tail -30)"
+          logs=""
           for d in deploy/backend deploy/frontend deploy/workspace-manager statefulset/postgres; do
-            annotate "Logs $d" "$(k -n cloud-ide logs "$d" --tail=30)"
+            logs+="--- $d"$'\n'"$(k -n cloud-ide logs "$d" --tail=15)"$'\n'
           done
+          annotate "Logs" "$logs"
+          notready=""
+          for p in $(k -n cloud-ide get pods -o jsonpath='{range .items[?(@.status.containerStatuses[0].ready==false)]}{.metadata.name}{" "}{end}'); do
+            notready+="=== $p"$'\n'"$(k -n cloud-ide describe pod "$p" | sed -n '/^Containers:/,/^Conditions:/p' | head -40)"$'\n'
+            notready+="--- processes"$'\n'"$(k -n cloud-ide exec "$p" -- ps -o pid,stat,time,args | head -20)"$'\n'
+            notready+="--- ulimit -n: $(k -n cloud-ide exec "$p" -- sh -c 'ulimit -n')"$'\n'
+          done
+          annotate "Pods not ready" "${notready:-none}"
+          annotate "Machine" "$(uname -r; grep PRETTY /etc/os-release; grep -i huge /proc/meminfo; systemctl show k3s -p LimitNOFILE; df -h /; docker system df)"
           annotate "Node conditions" "$(k describe nodes | grep -E -A12 '^(Taints|Conditions):')"
-          annotate "Disk" "$(df -h / /var/lib/rancher 2>&1; docker system df 2>&1)"
 
   # Runs on our server (self-hosted runner), only after a successful build on main.
   deploy:
