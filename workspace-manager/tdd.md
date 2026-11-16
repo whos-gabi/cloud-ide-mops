@@ -63,8 +63,9 @@ Sunt verificate operațiile:
 - creare director;
 - listare fișiere;
 - crearea resurselor, cu label-uri și fără token Kubernetes în pod (`TestCreateWorkspaceCreatesLabeledResources`);
-- ștergerea completă, și a unui workspace creat pe jumătate (`TestDeleteWorkspaceRemovesEverythingAndToleratesMissingParts`);
-- erorile File Agent devin `StatusError` cu statusul lui, iar un File Agent care nu răspunde devine `ErrUnavailable`;
+- ștergerea completă (`TestDeleteWorkspaceRemovesEverything`), și a unui workspace creat pe jumătate (`TestDeleteWorkspaceRemovesEverythingAndToleratesMissingParts`);
+- erorile File Agent devin `StatusError` cu statusul lui, iar un File Agent care nu răspunde devine `ErrUnavailable` (`503`), cu excepția unui workspace care nu există, care rămâne `404` (`TestFileCallOnAMissingWorkspaceIsNotFound`);
+- un răspuns prea mare de la File Agent e o eroare, nu un fișier trunchiat (`TestOversizedFileAgentAnswerIsAnError`);
 - formatul `workspaceID` (`TestValidWorkspaceID`).
 
 Testele verifică erori descriptive și păstrează service-ul izolat de un cluster Kubernetes pentru testele unitare: resursele se verifică pe clientul fals din `k8s.io/client-go/kubernetes/fake`, iar File Agent e înlocuit cu un server `httptest`.

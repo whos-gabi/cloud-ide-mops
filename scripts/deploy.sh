@@ -54,7 +54,7 @@ else
 fi
 
 echo "==> Workspace manager token"
-# Created once; the backend and workspace-manager both read it from the secret.
+# Created once; workspace-manager reads it, and so will the backend (US04).
 if kubectl -n "$NAMESPACE" get secret workspace-manager-token >/dev/null 2>&1; then
   echo "secret workspace-manager-token already exists"
 else

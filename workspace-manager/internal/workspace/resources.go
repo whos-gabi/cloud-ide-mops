@@ -36,6 +36,10 @@ func BuildDeployment(req CreateWorkspaceRequest) *appsv1.Deployment {
 				},
 
 				Spec: corev1.PodSpec{
+					// The runtime's "sleep infinity" ignores SIGTERM; don't wait
+					// the default 30 s for it when the workspace stops.
+					TerminationGracePeriodSeconds: int64Ptr(5),
+
 					// User code runs here: no Kubernetes API token in the pod.
 					AutomountServiceAccountToken: boolPtr(false),
 					// Skip the env vars Kubernetes adds for every Service in the

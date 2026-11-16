@@ -15,8 +15,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// The file agent never serves files over 10 MB; leave room for the error body.
-const maxFileAgentResponse = 10<<20 + 1<<10
+// Largest file agent answer read: it never serves files over 10 MB (plus room
+// for an error body). Listings aren't bounded by the agent, so they get more.
+const (
+	maxFileAgentResponse = 10<<20 + 1<<10
+	maxFileListResponse  = 64 << 20
+)
 
 type WorkspaceService struct {
 	k8s       *clientkube.KubernetesClient
@@ -310,13 +314,27 @@ func (s *WorkspaceService) fileAgentRequest(
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
 		}
+		// A workspace that doesn't exist (any more) is a 404, not "starting".
+		if s.k8s != nil {
+			_, getErr := s.k8s.GetDeployment(ctx, s.namespace, workspaceID)
+			if apierrors.IsNotFound(getErr) {
+				return nil, fmt.Errorf("%s: %w", op, getErr)
+			}
+		}
 		return nil, fmt.Errorf("%s: %w: %w", op, ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxFileAgentResponse))
+	limit := int64(maxFileAgentResponse)
+	if endpoint == "/files/list" {
+		limit = maxFileListResponse
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("%s: read response: %w", op, err)
+	}
+	if int64(len(respBody)) > limit {
+		return nil, fmt.Errorf("%s: response larger than %d bytes", op, limit)
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

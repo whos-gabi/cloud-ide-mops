@@ -24,6 +24,8 @@ Token-ul vine din variabila `WORKSPACE_MANAGER_TOKEN`. În cluster, `scripts/dep
 îl generează o singură dată în secretul `workspace-manager-token` (cheia `token`),
 iar Workspace Manager și backend-ul îl citesc de acolo. Fără variabilă, serviciul nu
 pornește. Un request fără token sau cu token greșit primește `401 Unauthorized`.
+Backend-ul primește același secret prin `k8s/backend.yaml` din momentul în care
+începe să apeleze serviciul (US04).
 
 ## URL de bază
 
@@ -151,6 +153,8 @@ DELETE /workspaces/{workspaceID}
 
 Șterge Deployment-ul, Service-ul și PVC-ul, deci și fișierele. Părțile care lipsesc
 deja sunt ignorate, așa că poate curăța și un workspace creat pe jumătate.
+Kubernetes termină ștergerea în fundal, în câteva secunde. Până atunci, o creare
+cu același `workspaceID` primește `409`, deci folosește un ID nou pentru fiecare workspace.
 
 ```text
 204 No Content
@@ -376,7 +380,7 @@ Corpul răspunsului de eroare este un mesaj text.
 |---|---|
 | `400 Bad Request` | body JSON invalid, `workspaceID` sau `userID` invalid, cale invalidă (File Agent) |
 | `401 Unauthorized` | lipsește token-ul sau e greșit |
-| `404 Not Found` | workspace-ul (Deployment-ul) nu există, fișierul sau directorul nu există (File Agent) |
+| `404 Not Found` | workspace-ul (Deployment-ul) nu există, inclusiv la operațiile pe fișiere; fișierul sau directorul nu există (File Agent) |
 | `409 Conflict` | workspace-ul există deja, fișierul sau directorul există deja (File Agent) |
 | `413 Request Entity Too Large` | fișier peste 10 MB (File Agent) |
 | `503 Service Unavailable` | File Agent nu răspunde: workspace-ul e oprit sau încă pornește |

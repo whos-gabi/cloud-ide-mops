@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -150,6 +151,29 @@ func TestCreateWorkspaceCreatesLabeledResources(t *testing.T) {
 	}
 }
 
+func TestDeleteWorkspaceRemovesEverything(t *testing.T) {
+	service, clientset := newFakeKubernetesService(t)
+	ctx := context.Background()
+
+	if err := service.CreateWorkspace(ctx, CreateWorkspaceRequest{WorkspaceID: "ws-1", UserID: "user-1"}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	if err := service.DeleteWorkspace(ctx, "ws-1"); err != nil {
+		t.Fatalf("delete workspace: %v", err)
+	}
+
+	if _, err := clientset.AppsV1().Deployments("cloud-ide").Get(ctx, "ws-1", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected deployment to be gone, got %v", err)
+	}
+	if _, err := clientset.CoreV1().Services("cloud-ide").Get(ctx, "ws-1", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected service to be gone, got %v", err)
+	}
+	if _, err := clientset.CoreV1().PersistentVolumeClaims("cloud-ide").Get(ctx, "ws-1-pvc", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected pvc to be gone, got %v", err)
+	}
+}
+
 func TestDeleteWorkspaceRemovesEverythingAndToleratesMissingParts(t *testing.T) {
 	service, clientset := newFakeKubernetesService(t)
 	ctx := context.Background()
@@ -204,18 +228,50 @@ func TestFileAgentErrorBecomesStatusError(t *testing.T) {
 	}
 }
 
-func TestUnreachableFileAgentIsUnavailable(t *testing.T) {
+func closedServerURL() string {
 	agent := httptest.NewServer(http.NotFoundHandler())
-	url := agent.URL
 	agent.Close()
+	return agent.URL
+}
 
-	service := NewWorkspaceService(nil)
+func TestUnreachableFileAgentIsUnavailable(t *testing.T) {
+	service, _ := newFakeKubernetesService(t)
+	if err := service.CreateWorkspace(context.Background(), CreateWorkspaceRequest{WorkspaceID: "ws-1", UserID: "user-1"}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	url := closedServerURL()
 	service.fileAgentBaseURL = func(string) string { return url }
 
 	_, err := service.ListFiles(context.Background(), "ws-1", "")
 
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("expected ErrUnavailable, got %v", err)
+	}
+}
+
+func TestFileCallOnAMissingWorkspaceIsNotFound(t *testing.T) {
+	service, _ := newFakeKubernetesService(t)
+	url := closedServerURL()
+	service.fileAgentBaseURL = func(string) string { return url }
+
+	_, err := service.ReadFile(context.Background(), "ws-gone", "a.txt")
+
+	if !apierrors.IsNotFound(err) || errors.Is(err, ErrUnavailable) {
+		t.Fatalf("expected a not-found error, got %v", err)
+	}
+}
+
+func TestOversizedFileAgentAnswerIsAnError(t *testing.T) {
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("a"), maxFileAgentResponse+1))
+	}))
+	defer agent.Close()
+
+	service := NewWorkspaceService(nil)
+	service.fileAgentBaseURL = func(string) string { return agent.URL }
+
+	if _, err := service.ReadFile(context.Background(), "ws-1", "big.bin"); err == nil {
+		t.Fatal("expected an error instead of a truncated file")
 	}
 }
 
