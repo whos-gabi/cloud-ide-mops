@@ -15,4 +15,8 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   databaseUrl: databaseUrl(),
   version: process.env.APP_VERSION ?? 'dev',
+  session: {
+    cookieName: 'sid',
+    ttlMs: 7 * 24 * 60 * 60 * 1000,
+  },
 }
