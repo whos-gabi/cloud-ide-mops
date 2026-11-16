@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
+import { StatusBar } from '../components/StatusBar'
 import { useAuth } from '../context/AuthContext'
 
 export function RegisterPage() {
@@ -44,51 +45,57 @@ export function RegisterPage() {
   }
 
   return (
-    <main style={cardStyle}>
-      <h1>Creare cont</h1>
+    <div className="layout">
+      <header className="brand">
+        <span className="brand-badge">&lt;/&gt; Workspace</span>
+        <h1>Cloud IDE</h1>
+        <p className="tagline">Creează un cont nou pentru a începe să lucrezi în cloud.</p>
+      </header>
 
-      {error && <div style={errorBoxStyle}>{error}</div>}
+      <main className="card">
+        <div className="tabs">
+          <Link to="/login" className="tab">
+            Autentificare
+          </Link>
+          <span className="tab active">Cont nou</span>
+        </div>
 
-      <form onSubmit={handleSubmit} style={formStyle}>
-        <label style={labelStyle}>
-          Email
-          <input
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={inputStyle}
-          />
-        </label>
+        {error && <div className="alert err">{error}</div>}
 
-        <label style={labelStyle}>
-          Parolă
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={inputStyle}
-          />
-        </label>
+        <form className="form" onSubmit={handleSubmit}>
+          <div className="field">
+            <label htmlFor="email">Adresă de email</label>
+            <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="nume@exemplu.ro"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
 
-        <button type="submit" disabled={submitting} style={buttonStyle}>
-          {submitting ? 'Se creează contul...' : 'Înregistrează-te'}
-        </button>
-      </form>
+          <div className="field">
+            <label htmlFor="password">Parolă</label>
+            <input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Minim 8 caractere"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
 
-      <p style={{ marginTop: '1rem' }}>
-        Ai deja cont? <Link to="/login">Autentifică-te</Link>
-      </p>
-    </main>
+          <button type="submit" className="btn-primary" disabled={submitting}>
+            {submitting ? 'Se creează contul...' : 'Creează cont'}
+          </button>
+        </form>
+      </main>
+
+      <StatusBar />
+    </div>
   )
 }
-
-const cardStyle = { maxWidth: 400, margin: '4rem auto', padding: '1.5rem', border: '1px solid #ddd', borderRadius: 8 }
-const formStyle = { display: 'flex', flexDirection: 'column' as const, gap: '1rem' }
-const labelStyle = { display: 'flex', flexDirection: 'column' as const, gap: '0.25rem', fontSize: '0.9rem' }
-const inputStyle = { padding: '0.5rem', fontSize: '1rem' }
-const buttonStyle = { padding: '0.6rem', fontSize: '1rem', cursor: 'pointer' }
-const errorBoxStyle = { padding: '0.75rem', marginBottom: '1rem', background: '#fee2e2', color: '#991b1b', borderRadius: 6 }

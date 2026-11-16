@@ -13,5 +13,4 @@ export interface ApiErrorPayload {
   code?: string
   message?: string
   error?: string
-  details?: Record<string, string[]>
 }

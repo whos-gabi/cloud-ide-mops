@@ -3,13 +3,11 @@ import type { ApiErrorPayload } from '../types/auth'
 export class ApiError extends Error {
   status: number
   code?: string
-  details?: Record<string, string[]>
 
   constructor(status: number, payload: ApiErrorPayload | null) {
     super(payload?.message || payload?.error || 'A apărut o eroare neașteptată.')
     this.status = status
     this.code = payload?.code
-    this.details = payload?.details
   }
 }
 
