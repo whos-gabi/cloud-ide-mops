@@ -5,10 +5,13 @@ resources:
   - postgres.yaml
   - backend.yaml
   - frontend.yaml
+  - workspace-manager.yaml
   - ingress.yaml
 # scripts/deploy.sh sets newTag to the commit being deployed.
 images:
   - name: cloud-ide-backend
     newTag: dev
   - name: cloud-ide-frontend
+    newTag: dev
+  - name: cloud-ide-workspace-manager
     newTag: dev

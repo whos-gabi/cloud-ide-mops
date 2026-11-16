@@ -13,9 +13,24 @@ SUDO=""
 echo "==> Building images ($TAG)"
 docker build -t "cloud-ide-backend:$TAG" --build-arg "APP_VERSION=$TAG" backend
 docker build -t "cloud-ide-frontend:$TAG" frontend
+docker build -f workspace-manager/dockerfile \
+  -t "cloud-ide-workspace-manager:$TAG" workspace-manager
+docker build -t "cloudcode:dev" workspace-runtime
+agent_context="$(mktemp -d)"
+manifests=""
+cleanup() {
+  rm -rf "$agent_context" "$manifests"
+}
+trap cleanup EXIT
+cp workspace-manager/file-agent/dockerfile "$agent_context/dockerfile"
+(cd workspace-manager/file-agent && go build -trimpath -ldflags="-s -w" -o "$agent_context/file-agent" .)
+docker build -f "$agent_context/dockerfile" \
+  -t "cloud-ide-file-agent:dev" "$agent_context"
 
 echo "==> Importing images into k3s"
 docker save "cloud-ide-backend:$TAG" "cloud-ide-frontend:$TAG" \
+  "cloud-ide-workspace-manager:$TAG" "cloud-ide-file-agent:dev" \
+  "cloudcode:dev" \
   | $SUDO /usr/local/bin/k3s ctr -n k8s.io images import -
 
 echo "==> Database credentials"
@@ -32,7 +47,6 @@ fi
 
 echo "==> Applying manifests"
 manifests="$(mktemp -d)"
-trap 'rm -rf "$manifests"' EXIT
 cp k8s/* "$manifests/"
 sed -i "s/newTag: .*/newTag: $TAG/" "$manifests/kustomization.yaml"
 kubectl apply -k "$manifests"

@@ -28,13 +28,16 @@ metadata:
   namespace: cloud-ide
 rules:
   - apiGroups: [""]
-    resources: [services, configmaps, secrets, persistentvolumeclaims, pods, pods/log, events]
+    resources: [services, configmaps, secrets, persistentvolumeclaims, pods, pods/log, events, serviceaccounts]
     verbs: ["*"]
   - apiGroups: [apps]
     resources: [deployments, replicasets, statefulsets]
     verbs: ["*"]
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
+    verbs: ["*"]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
     verbs: ["*"]
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
