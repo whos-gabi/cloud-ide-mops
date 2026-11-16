@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:workspace-manager": "tsx test/helpers/fake-workspace-manager.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",

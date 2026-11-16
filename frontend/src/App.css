@@ -353,3 +353,375 @@ body {
   color: var(--text-secondary);
   font-size: 0.9rem;
 }
+/* ---------- Dashboard: proiecte ---------- */
+
+/* Dashboard-ul crește odată cu lista: îl aliniem sus ca să nu „sară” la fiecare schimbare. */
+.layout.layout-wide {
+  max-width: 640px;
+  align-self: flex-start;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.card-subtitle {
+  margin-top: 0.3rem;
+  font-size: 0.825rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.count-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  vertical-align: -2px;
+  margin-right: 0.5rem;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.alert-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.alert-row:last-child {
+  margin-bottom: 0;
+}
+
+.alert-action {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.alert-action:hover {
+  color: #fecaca;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.empty-title {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.project-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.project-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+}
+
+.project-row.is-new {
+  border-color: rgba(34, 197, 94, 0.4);
+  animation: project-in 0.35s ease-out;
+}
+
+@keyframes project-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.project-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.project-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.project-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.project-meta time {
+  white-space: nowrap;
+}
+
+.lang-badge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.lang-badge[data-language='python'] {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+}
+
+.lang-badge[data-language='javascript'] {
+  background: rgba(250, 204, 21, 0.1);
+  border-color: rgba(250, 204, 21, 0.3);
+  color: #fde047;
+}
+
+.lang-badge[data-language='java'] {
+  background: rgba(251, 146, 60, 0.1);
+  border-color: rgba(251, 146, 60, 0.3);
+  color: #fdba74;
+}
+
+.lang-badge[data-language='cpp'] {
+  background: rgba(167, 139, 250, 0.1);
+  border-color: rgba(167, 139, 250, 0.3);
+  color: #c4b5fd;
+}
+
+/* ---------- Formular: proiect nou ---------- */
+
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.field-counter {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.field input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+.field input[aria-invalid='true']:focus {
+  border-color: var(--err);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.field-error {
+  font-size: 0.78rem;
+  color: #fca5a5;
+  line-height: 1.4;
+}
+
+.lang-group {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.lang-group legend {
+  padding: 0;
+  font-size: 0.825rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.lang-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.lang-group .field-error {
+  margin-top: 0.4rem;
+}
+
+.lang-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+}
+
+/* Radio-ul nativ rămâne focusabil (Tab / săgeți), dar e ascuns vizual. */
+.lang-option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.lang-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  height: 100%;
+  padding: 0.7rem 2rem 0.7rem 0.8rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lang-tile::after {
+  content: '';
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #334155;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lang-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lang-file {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.lang-option:hover .lang-tile {
+  border-color: #334155;
+}
+
+.lang-option input:checked + .lang-tile {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.lang-option input:checked + .lang-tile::after {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--bg-input), inset 0 0 0 7px var(--accent);
+}
+
+.lang-option input:checked + .lang-tile .lang-file {
+  color: #93c5fd;
+}
+
+.lang-option input:focus-visible + .lang-tile {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+}
+
+.lang-group.has-error .lang-tile {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.lang-option input:disabled + .lang-tile {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.progress-note {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: #bfdbfe;
+  font-size: 0.825rem;
+  line-height: 1.5;
+}
+
+.progress-note .spinner {
+  margin-top: 0.15rem;
+}
+
+.progress-note code {
+  font-size: 0.78rem;
+  color: #93c5fd;
+}
+
+@media (max-width: 680px) {
+  .lang-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+
+  .project-row.is-new {
+    animation: none;
+  }
+}
