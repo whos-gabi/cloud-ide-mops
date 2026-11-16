@@ -3,6 +3,8 @@ name: CI/CD
 on:
   pull_request:
     branches: [main]
+    # labeled: re-run the infra/ check when an admin adds infra-applied.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -67,10 +69,191 @@ jobs:
       # Fails if a model changed without a migration.
       - run: npm run migration:check
 
+  # Go unit tests, with the same Go version the Dockerfiles build with.
+  test-go:
+    name: Test ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    container: golang:1.26-bookworm
+    env:
+      GOFLAGS: -buildvcs=false
+    strategy:
+      matrix:
+        module: [workspace-manager, workspace-manager/file-agent]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: go vet ./...
+      - run: go test ./...
+
+  # infra/ (the deploy account's permissions) is applied by hand on the server,
+  # never by CI. A PR that changes it stays red until an admin has applied it
+  # there and added the infra-applied label.
+  infra-check:
+    name: infra/ applied on the server
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      INFRA_APPLIED: ${{ contains(github.event.pull_request.labels.*.name, 'infra-applied') }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          git fetch --depth=1 origin "$BASE_SHA"
+          if git diff --quiet "$BASE_SHA" HEAD -- infra/; then
+            echo "infra/ unchanged."
+          elif [ "$INFRA_APPLIED" = "true" ]; then
+            echo "infra/ changed; the infra-applied label says an admin applied it on the server."
+          else
+            echo "::error title=Admin step needed::This PR changes infra/, which CI never applies to the server. An admin runs on the server, from this branch: sudo kubectl apply -f infra/cluster-setup.yaml. Then add the label infra-applied to this PR to re-run this check."
+            exit 1
+          fi
+
+  # PRs only: runs the real deploy script against a throwaway k3s (same version as
+  # the server), with the same limited deploy account, the same sudo rule and only
+  # the commands the server has. Whatever would break the deploy after merge (a
+  # missing tool, a missing permission, a pod that never becomes ready) fails here.
+  deploy-rehearsal:
+    name: Deploy rehearsal (k3s)
+    if: github.event_name == 'pull_request'
+    # Same Ubuntu release as the server.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ADMIN_KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      # The commands deploy.sh may use. Needs a new one? Install it on the server
+      # first, then add it here.
+      SERVER_TOOLS: >-
+        bash env dirname cat cp rm mkdir mktemp chmod id sed grep xargs head tail
+        git openssl sudo docker kubectl
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start k3s (same version as the server)
+        run: |
+          curl -sfL https://get.k3s.io \
+            | INSTALL_K3S_VERSION=v1.37.2+k3s1 sh -s - --write-kubeconfig-mode 644
+          # On the server kubectl is k3s's own; use the same here.
+          sudo ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl
+          for _ in $(seq 1 60); do
+            kubectl --kubeconfig "$ADMIN_KUBECONFIG" get nodes 2>/dev/null | grep -q ' Ready' && break
+            sleep 2
+          done
+          kubectl --kubeconfig "$ADMIN_KUBECONFIG" get nodes
+
+      # Same namespace, account and permissions as infra/setup-runner.sh creates.
+      - name: Limited deploy account
+        run: |
+          kubectl --kubeconfig "$ADMIN_KUBECONFIG" apply -f infra/cluster-setup.yaml
+          TOKEN_B64=""
+          for _ in $(seq 1 30); do
+            TOKEN_B64=$(kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide \
+              get secret deployer-token -o jsonpath='{.data.token}')
+            [ -n "$TOKEN_B64" ] && break
+            sleep 1
+          done
+          SA_TOKEN=$(echo "$TOKEN_B64" | base64 -d)
+          echo "::add-mask::$SA_TOKEN"
+          CA_DATA=$(kubectl --kubeconfig "$ADMIN_KUBECONFIG" config view --raw \
+            -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+          cat > "$RUNNER_TEMP/deployer.yaml" <<KUBE
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: k3s
+              cluster:
+                server: https://127.0.0.1:6443
+                certificate-authority-data: $CA_DATA
+          users:
+            - name: deployer
+              user:
+                token: $SA_TOKEN
+          contexts:
+            - name: deployer
+              context: { cluster: k3s, user: deployer, namespace: cloud-ide }
+          current-context: deployer
+          KUBE
+          chmod 600 "$RUNNER_TEMP/deployer.yaml"
+          echo "KUBECONFIG=$RUNNER_TEMP/deployer.yaml" >> "$GITHUB_ENV"
+
+      # GitHub's machine has Go, Node and more, and full sudo; the server doesn't.
+      - name: Make this machine look like the server
+        run: |
+          bin="$RUNNER_TEMP/server-bin"
+          mkdir -p "$bin"
+          for t in $SERVER_TOOLS; do
+            [ "$t" = sudo ] && continue
+            p=$(type -P "$t") || { echo "::error::$t is missing on this machine"; exit 1; }
+            ln -s "$p" "$bin/$t"
+          done
+          # On the server ghrunner may sudo exactly one command (infra/setup-runner.sh).
+          cat > "$bin/sudo" <<'SUDO'
+          #!/bin/bash
+          [ "${1:-}" = "-n" ] && shift
+          if [ "$*" = "/usr/local/bin/k3s ctr -n k8s.io images import -" ]; then
+            exec /usr/bin/sudo -n "$@"
+          fi
+          echo "::error title=sudo not allowed on the server::sudo $* (the server only allows: sudo /usr/local/bin/k3s ctr -n k8s.io images import -)" >&2
+          exit 1
+          SUDO
+          chmod +x "$bin/sudo"
+
+      - name: Run the deploy script
+        run: |
+          /usr/bin/env -i HOME="$HOME" KUBECONFIG="$KUBECONFIG" \
+            PATH="$RUNNER_TEMP/server-bin" ./scripts/deploy.sh "$GITHUB_SHA"
+
+      - name: Smoke test through the ingress
+        run: |
+          get() { curl -fsS --max-time 5 -H 'Host: ide.filegrid.cc.cd' "http://127.0.0.1$1" || true; }
+          for _ in $(seq 1 40); do
+            health=$(get /api/health)
+            page=$(get /)
+            if [[ $health == *"$GITHUB_SHA"* && $health == *'"database":"ok"'* && $page == *'id="root"'* ]]; then
+              echo "Rehearsal deploy is serving $GITHUB_SHA: $health"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Last /api/health: ${health:-<no response>}"
+          echo "Rehearsal deploy is not serving $GITHUB_SHA after 120s"
+          exit 1
+
+      # Posted as annotations, so the reason shows on the PR's checks page
+      # without opening the job log.
+      - name: Cluster state (on failure)
+        if: failure()
+        run: |
+          k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" "$@" 2>&1 || true; }
+          annotate() {
+            local body="$2"
+            body="${body//'%'/'%25'}"
+            body="${body//$'\r'/'%0D'}"
+            body="${body//$'\n'/'%0A'}"
+            echo "::error title=$1::$body"
+          }
+          annotate "Pods" "$(k -n cloud-ide get pods -o wide)"
+          annotate "Recent events" "$(k -n cloud-ide get events --sort-by=.lastTimestamp | tail -30)"
+          logs=""
+          for d in deploy/backend deploy/frontend deploy/workspace-manager statefulset/postgres; do
+            logs+="--- $d"$'\n'"$(k -n cloud-ide logs "$d" --tail=15)"$'\n'
+          done
+          annotate "Logs" "$logs"
+          notready=""
+          for p in $(k -n cloud-ide get pods -o jsonpath='{range .items[?(@.status.containerStatuses[0].ready==false)]}{.metadata.name}{" "}{end}'); do
+            notready+="=== $p"$'\n'"$(k -n cloud-ide describe pod "$p" | sed -n '/^Containers:/,/^Conditions:/p' | head -40)"$'\n'
+            notready+="--- processes"$'\n'"$(k -n cloud-ide exec "$p" -- ps -o pid,stat,time,args | head -20)"$'\n'
+            notready+="--- ulimit -n: $(k -n cloud-ide exec "$p" -- sh -c 'ulimit -n')"$'\n'
+          done
+          annotate "Pods not ready" "${notready:-none}"
+          annotate "Machine" "$(uname -r; grep PRETTY /etc/os-release; grep -i huge /proc/meminfo; systemctl show k3s -p LimitNOFILE; df -h /; docker system df)"
+          annotate "Node conditions" "$(k describe nodes | grep -E -A12 '^(Taints|Conditions):')"
+
   # Runs on our server (self-hosted runner), only after a successful build on main.
   deploy:
     name: Deploy to ide.filegrid.cc.cd
-    needs: [build, test-backend]
+    needs: [build, test-backend, test-go]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, cloud-ide-deploy]
     concurrency:
@@ -84,7 +267,7 @@ jobs:
       - run: ./scripts/deploy.sh "${{ github.sha }}"
       - name: Smoke test
         run: |
-          for i in $(seq 1 12); do
+          for _ in $(seq 1 12); do
             if curl -fsS --max-time 5 https://ide.filegrid.cc.cd/api/health | grep -q "${{ github.sha }}"; then
               echo "Live site is serving ${{ github.sha }}"
               exit 0

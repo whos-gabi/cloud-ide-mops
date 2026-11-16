@@ -92,11 +92,21 @@ Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează d
 ## Cum ajunge codul live
 
 1. Faci un branch, dai push și deschizi un PR pe `main`.
-2. GitHub Actions face build la frontend și backend (job-ul **build**) și rulează testele backend-ului pe un PostgreSQL temporar (job-ul **test-backend**, inclusiv `migration:check`). Dacă pică, vezi eroarea în PR.
+2. GitHub Actions verifică PR-ul. Dacă ceva pică, vezi eroarea în PR:
+   - **build**: build la frontend și backend.
+   - **test-backend**: testele backend-ului pe un PostgreSQL temporar, inclusiv `migration:check`.
+   - **test-go**: `go vet` și `go test` pentru `workspace-manager`.
+   - **deploy-rehearsal**: rulează `scripts/deploy.sh` pe un k3s temporar, cu aceeași versiune, aceleași permisiuni, aceeași regulă `sudo` și aceleași comenzi ca pe server, apoi verifică site-ul prin ingress. Dacă ar pica deploy-ul după merge, pică aici. Când pică, motivul (pod-uri, evenimente, log-uri) apare direct pe pagina de checks a PR-ului.
+   - **infra-check**: pică dacă PR-ul schimbă `infra/` și un admin nu a confirmat încă că a aplicat schimbarea pe server (vezi regulile de mai jos).
 3. După merge pe `main` (sau push direct pe `main`), job-ul **deploy** rulează pe server: construiește imaginile Docker, le încarcă în k3s și face rollout. Durează în jur de 1–2 minute.
 4. Versiunea live (commit-ul) apare pe pagina principală și la https://ide.filegrid.cc.cd/api/health.
 
 Progresul și log-urile se văd în tab-ul **Actions** din GitHub.
+
+Reguli pentru deploy:
+- `deploy.sh` poate folosi doar comenzile din `SERVER_TOOLS` (în `.github/workflows/ci-cd.yml`): în principal `docker`, `kubectl` și `k3s`. Orice compilare (Go, Node etc.) se face în Dockerfile, nu direct pe server. Dacă ai nevoie de o comandă nouă, o instalezi întâi pe server și abia apoi o adaugi în listă.
+- O componentă nouă se adaugă în `scripts/deploy.sh` (build și import) și în `k8s/kustomization.yaml`.
+- Fișierele din `infra/` (de exemplu permisiunile contului de deploy) **nu** se aplică automat. Dacă un PR le schimbă, check-ul **infra-check** pică. Un admin rulează atunci pe server, din branch-ul PR-ului, `sudo kubectl apply -f infra/cluster-setup.yaml` și pune pe PR eticheta `infra-applied`. Check-ul rulează din nou și trece. Fără acest pas, deploy-ul de după merge se oprește cu mesajul „Deploy blocked”.
 
 ## Server (doar pentru admin)
 

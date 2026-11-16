@@ -1,6 +1,20 @@
+# Built entirely inside Docker, so the deploy server needs no Go toolchain.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build
+
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /src
+
+COPY go.mod ./
+COPY *.go ./
+
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /file-agent .
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
-COPY file-agent /file-agent
+COPY --from=build /file-agent /file-agent
 
 USER nonroot:nonroot
 
