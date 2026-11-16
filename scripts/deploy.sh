@@ -18,6 +18,18 @@ echo "==> Importing images into k3s"
 docker save "cloud-ide-backend:$TAG" "cloud-ide-frontend:$TAG" \
   | $SUDO /usr/local/bin/k3s ctr -n k8s.io images import -
 
+echo "==> Database credentials"
+# Created once; don't rotate it, the data volume keeps the original password.
+if kubectl -n "$NAMESPACE" get secret postgres-credentials >/dev/null 2>&1; then
+  echo "secret postgres-credentials already exists"
+else
+  DB_PASSWORD="$(openssl rand -hex 24)"
+  kubectl -n "$NAMESPACE" create secret generic postgres-credentials \
+    --from-literal=password="$DB_PASSWORD" \
+    --from-literal=database-url="postgres://cloudide:$DB_PASSWORD@postgres:5432/cloudide"
+  unset DB_PASSWORD
+fi
+
 echo "==> Applying manifests"
 manifests="$(mktemp -d)"
 trap 'rm -rf "$manifests"' EXIT
@@ -26,6 +38,7 @@ sed -i "s/newTag: .*/newTag: $TAG/" "$manifests/kustomization.yaml"
 kubectl apply -k "$manifests"
 
 echo "==> Waiting for rollout"
+kubectl -n "$NAMESPACE" rollout status statefulset/postgres --timeout=180s
 kubectl -n "$NAMESPACE" rollout status deployment/backend --timeout=180s
 kubectl -n "$NAMESPACE" rollout status deployment/frontend --timeout=180s
 

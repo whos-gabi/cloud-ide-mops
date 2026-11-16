@@ -21,11 +21,19 @@ spec:
           env:
             - name: PORT
               value: "3000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: postgres-credentials, key: database-url }
           # Keep serving for a few seconds after Traefik is told to stop routing here,
           # so rollouts don't drop requests.
           lifecycle:
             preStop:
               sleep: { seconds: 5 }
+          # Startup waits for the database and runs migrations; liveness only begins after this.
+          startupProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 2
+            failureThreshold: 45
           readinessProbe:
             httpGet: { path: /api/health, port: 3000 }
             periodSeconds: 5

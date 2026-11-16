@@ -1,0 +1,20 @@
+# Local dev database (dev-only credentials): docker compose up -d db
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: cloudide
+      POSTGRES_PASSWORD: cloudide
+      POSTGRES_DB: cloudide
+    ports:
+      - "127.0.0.1:5432:5432" # not reachable from the network
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cloudide", "-d", "cloudide"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db-data:

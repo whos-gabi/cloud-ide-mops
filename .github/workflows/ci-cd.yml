@@ -32,10 +32,45 @@ jobs:
       - run: npm run lint --if-present
       - run: npm run build
 
+  # Backend tests against a throwaway Postgres.
+  test-backend:
+    name: Test backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cloudide
+          POSTGRES_PASSWORD: cloudide
+          POSTGRES_DB: cloudide
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cloudide -d cloudide"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://cloudide:cloudide@localhost:5432/cloudide
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Fails if a model changed without a migration.
+      - run: npm run migration:check
+
   # Runs on our server (self-hosted runner), only after a successful build on main.
   deploy:
     name: Deploy to ide.filegrid.cc.cd
-    needs: build
+    needs: [build, test-backend]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, cloud-ide-deploy]
     concurrency:
