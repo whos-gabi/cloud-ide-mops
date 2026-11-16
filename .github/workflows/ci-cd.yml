@@ -177,16 +177,26 @@ jobs:
           echo "Rehearsal deploy is not serving $GITHUB_SHA after 120s"
           exit 1
 
+      # Posted as annotations, so the reason shows on the PR's checks page
+      # without opening the job log.
       - name: Cluster state (on failure)
         if: failure()
         run: |
-          k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" -n cloud-ide "$@" || true; }
-          k get all
-          k get events --sort-by=.lastTimestamp
+          k() { kubectl --kubeconfig "$ADMIN_KUBECONFIG" "$@" 2>&1 || true; }
+          annotate() {
+            local body="$2"
+            body="${body//'%'/'%25'}"
+            body="${body//$'\r'/'%0D'}"
+            body="${body//$'\n'/'%0A'}"
+            echo "::error title=$1::$body"
+          }
+          annotate "Pods" "$(k -n cloud-ide get pods -o wide)"
+          annotate "Recent events" "$(k -n cloud-ide get events --sort-by=.lastTimestamp | tail -25)"
           for d in deploy/backend deploy/frontend deploy/workspace-manager statefulset/postgres; do
-            echo "--- logs $d"
-            k logs "$d" --tail=60
+            annotate "Logs $d" "$(k -n cloud-ide logs "$d" --tail=30)"
           done
+          annotate "Node conditions" "$(k describe nodes | grep -E -A12 '^(Taints|Conditions):')"
+          annotate "Disk" "$(df -h / /var/lib/rancher 2>&1; docker system df 2>&1)"
 
   # Runs on our server (self-hosted runner), only after a successful build on main.
   deploy:
