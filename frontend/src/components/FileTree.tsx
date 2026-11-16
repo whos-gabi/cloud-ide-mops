@@ -271,6 +271,9 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
   }
 
   const handleDraftKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Enter/Esc care confirmă sau anulează o compunere IME aparțin IME-ului
+    // (keyCode 229: Safari termină compunerea înainte de keydown).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === 'Enter') {
       e.preventDefault()
       void submitDraft()
@@ -368,6 +371,10 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
         if (!expanded.has(path)) expandDirectory(path)
         else if (next?.dataset.path?.startsWith(`${path}/`)) next.focus()
         break
+      // Fără selecție, „Fișier nou” / „Director nou” creează din nou în rădăcină.
+      case 'Escape':
+        onSelect(null)
+        break
       case 'ArrowLeft': {
         if (isDirectory && expanded.has(path)) {
           collapseDirectory(path)
@@ -391,7 +398,7 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
     const where = locationLabel(draft.parent)
 
     return (
-      <li role="none" className="tree-draft">
+      <li className="tree-draft">
         <div className="tree-draft-row" style={{ paddingLeft: indent(depth) }}>
           <span className="tree-chevron" />
           {draft.type === 'directory' ? (
@@ -441,15 +448,7 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
     const rowClass = `tree-row${isSelected ? ' is-selected' : ''}${entry.path === recentPath ? ' is-new' : ''}`
 
     return (
-      <li
-        key={entry.path}
-        role="treeitem"
-        aria-level={depth + 1}
-        aria-selected={isSelected}
-        aria-expanded={isDirectory ? isExpanded : undefined}
-        aria-label={entry.name}
-        className="tree-item"
-      >
+      <li key={entry.path} className="tree-item">
         <div className={rowClass}>
           <button
             type="button"
@@ -458,6 +457,10 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
             data-path={entry.path}
             data-type={entry.type}
             title={entry.path}
+            // Stările sunt pe butonul care primește focusul, ca cititoarele de
+            // ecran să le anunțe.
+            aria-expanded={isDirectory ? isExpanded : undefined}
+            aria-current={isSelected ? 'true' : undefined}
             onClick={() => handleItemClick(entry)}
           >
             <span className={`tree-chevron${isExpanded ? ' is-open' : ''}`}>
@@ -481,7 +484,7 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
           </button>
         </div>
         {isExpanded && (
-          <ul role="group" className="tree-group">
+          <ul className="tree-group">
             {renderChildren(entry.path, depth + 1)}
           </ul>
         )}
@@ -504,13 +507,13 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
         {draftHere && renderDraft(depth)}
         {entries.map((entry) => renderEntry(entry, depth))}
         {(!dir || dir.status === 'loading') && (
-          <li role="none" {...statusProps}>
+          <li {...statusProps}>
             <span className="spinner" aria-hidden="true" />
             {isRoot ? 'Se încarcă fișierele…' : 'Se încarcă…'}
           </li>
         )}
         {dir?.status === 'error' && (
-          <li role="none" {...statusProps} className={`${statusProps.className} is-error`}>
+          <li {...statusProps} className={`${statusProps.className} is-error`}>
             <span role="alert">{dir.error}</span>
             <button type="button" className="alert-action" onClick={() => loadDirectory(path)}>
               Încearcă din nou
@@ -518,7 +521,7 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
           </li>
         )}
         {dir?.status === 'ready' && entries.length === 0 && !draftHere && (
-          <li role="none" {...statusProps} className={`${statusProps.className} is-muted`}>
+          <li {...statusProps} className={`${statusProps.className} is-muted`}>
             {isRoot ? 'Proiectul nu are fișiere.' : 'Gol'}
           </li>
         )}
@@ -558,15 +561,23 @@ export function FileTree({ projectId, selected, onSelect }: FileTreeProps) {
         </div>
       </div>
 
-      <div className="explorer-body">
-        <ul
-          ref={treeRef}
-          role="tree"
-          aria-labelledby={titleId}
-          className="tree"
-          tabIndex={-1}
-          onKeyDown={handleTreeKeyDown}
-        >
+      <p className="explorer-target">
+        Elementele noi se creează în <code>{target}</code>
+        {selected && (
+          <button type="button" className="explorer-target-reset" onClick={() => onSelect(null)}>
+            Creează în rădăcină
+          </button>
+        )}
+      </p>
+
+      {/* Un click pe spațiul gol deselectează, ca ținta să redevină rădăcina. */}
+      <div
+        className="explorer-body"
+        onClick={(e) => {
+          if (e.target === e.currentTarget || e.target === treeRef.current) onSelect(null)
+        }}
+      >
+        <ul ref={treeRef} aria-labelledby={titleId} className="tree" onKeyDown={handleTreeKeyDown}>
           {renderChildren(ROOT_PATH, 0)}
         </ul>
       </div>

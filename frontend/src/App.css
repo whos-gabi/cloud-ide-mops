@@ -974,6 +974,42 @@ body:has(.workspace-page) {
   gap: 0.35rem;
 }
 
+.explorer-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.explorer-target code {
+  color: var(--text-secondary);
+}
+
+.explorer-target-reset {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: #60a5fa;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.explorer-target-reset:hover {
+  color: var(--text-primary);
+}
+
+.explorer-target-reset:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .explorer-action {
   display: inline-flex;
   align-items: center;
