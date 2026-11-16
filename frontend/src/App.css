@@ -725,3 +725,694 @@ body {
     animation: none;
   }
 }
+
+/* ---------- Dashboard: rândurile duc la proiect ---------- */
+
+a.project-row {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+a.project-row:hover {
+  border-color: #334155;
+  background: rgba(30, 41, 59, 0.6);
+}
+
+a.project-row:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+}
+
+/* ---------- Butoane și linkuri comune ---------- */
+
+.btn-secondary {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #273449;
+  border-color: #475569;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary:focus-visible,
+.btn-compact:focus-visible,
+.dialog-actions .btn-danger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.45);
+}
+
+.btn-danger.btn-compact {
+  width: auto;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.btn-link {
+  display: block;
+  margin-top: 1.25rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.35rem 0.6rem;
+  border-radius: 7px;
+  white-space: nowrap;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.back-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.back-link:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.card .back-link {
+  margin-left: -0.6rem;
+}
+
+/* Cardurile cu un singur mesaj au textul scurt: le dăm lățimea formularelor. */
+.layout.layout-message {
+  width: min(440px, calc(100vw - 3rem));
+}
+
+/* ---------- Proiect: spațiul de lucru ---------- */
+
+/* Pagina proiectului ocupă tot ecranul, aliniată sus, nu centrată ca formularele. */
+body:has(.workspace-page) {
+  display: block;
+  padding: 0;
+}
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.workspace-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  background: rgba(17, 24, 39, 0.85);
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.workspace-name {
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.workspace-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 2rem 1.25rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.workspace-placeholder code {
+  font-size: 0.8rem;
+  color: #93c5fd;
+  overflow-wrap: anywhere;
+}
+
+.file-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.file-view-header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+}
+
+.file-view-path {
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.file-view-dir {
+  color: var(--text-muted);
+}
+
+/* Exploratorul e în stânga pe ecrane late și deasupra pe cele înguste. */
+.only-narrow {
+  display: none;
+}
+
+/* ---------- Proiect: exploratorul de fișiere ---------- */
+
+.explorer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+}
+
+.explorer-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.explorer-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.explorer-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.explorer-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.3rem 0.5rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.explorer-action:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  border-color: #334155;
+}
+
+.explorer-action:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+.explorer-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.explorer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.35rem 0 1rem;
+}
+
+.icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tree,
+.tree-group {
+  list-style: none;
+}
+
+.tree:focus {
+  outline: none;
+}
+
+.tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  transition: background-color 0.1s ease;
+}
+
+.tree-row:hover {
+  background: rgba(30, 41, 59, 0.55);
+}
+
+.tree-row.is-selected {
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.tree-row.is-selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.tree-row.is-new {
+  animation: tree-new 1.4s ease-out;
+}
+
+@keyframes tree-new {
+  from {
+    background-color: rgba(34, 197, 94, 0.25);
+  }
+}
+
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+  padding-right: 0.25rem;
+  cursor: pointer;
+}
+
+.tree-row:hover .tree-label,
+.tree-row.is-selected .tree-label {
+  color: var(--text-primary);
+}
+
+.tree-label:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.tree-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.tree-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.tree-icon {
+  color: var(--text-muted);
+}
+
+.tree-icon.is-folder {
+  color: #60a5fa;
+}
+
+.tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Coșul apare la hover, la focus și pe rândul selectat. */
+.tree-delete {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 0.35rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.tree-row:hover .tree-delete,
+.tree-row:focus-within .tree-delete,
+.tree-row.is-selected .tree-delete {
+  opacity: 1;
+}
+
+.tree-delete:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.tree-delete:focus-visible {
+  outline: none;
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+}
+
+/* Pe ecranele tactile nu există hover: coșul rămâne vizibil. */
+@media (hover: none) {
+  .tree-delete {
+    opacity: 1;
+  }
+}
+
+.tree-draft-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  padding-right: 0.6rem;
+}
+
+.tree-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-focus);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.45rem;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.tree-input::placeholder {
+  color: var(--text-muted);
+}
+
+.tree-input[aria-invalid='true'] {
+  border-color: var(--err);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+.tree-input:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.spinner.tree-spinner {
+  margin-right: 0;
+}
+
+.tree-draft-error {
+  padding-top: 0.1rem;
+  padding-right: 0.75rem;
+  padding-bottom: 0.35rem;
+}
+
+.tree-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+  padding-top: 0.3rem;
+  padding-right: 0.75rem;
+  padding-bottom: 0.3rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.tree-status .spinner {
+  width: 12px;
+  height: 12px;
+  margin-right: 0;
+}
+
+.tree-status.is-muted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tree-status.is-error {
+  color: #fca5a5;
+}
+
+.tree-status.is-error .alert-action:hover {
+  color: #fecaca;
+}
+
+.tree-status.is-root {
+  padding: 0.6rem 0.9rem;
+}
+
+.tree-status.is-root.is-muted {
+  font-style: normal;
+}
+
+.tree-status.is-root.is-error {
+  margin: 0.4rem 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* ---------- Fereastra de confirmare ---------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(3px);
+  animation: dialog-fade 0.15s ease-out;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  animation: dialog-in 0.18s ease-out;
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialog-title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.dialog-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.dialog-path code {
+  font-size: 0.78rem;
+  color: #93c5fd;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.1rem 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.alert.dialog-alert {
+  margin: 1rem 0 0;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.4rem;
+}
+
+.dialog-actions .btn-danger {
+  width: auto;
+  padding: 0.55rem 1rem;
+}
+
+@keyframes dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+/* ---------- Proiect: ecrane înguste ---------- */
+
+@media (max-width: 719.98px) {
+  .workspace-page {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .workspace-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'back logout'
+      'title title';
+    gap: 0.5rem 0.75rem;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .workspace-header .back-link {
+    grid-area: back;
+    justify-self: start;
+    margin-left: -0.35rem;
+  }
+
+  .workspace-header .btn-compact {
+    grid-area: logout;
+  }
+
+  .workspace-title {
+    grid-area: title;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .only-wide {
+    display: none;
+  }
+
+  .only-narrow {
+    display: inline;
+  }
+
+  .explorer {
+    max-height: 60vh;
+    max-height: 60dvh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .workspace-main {
+    min-height: 16rem;
+    padding: 1rem;
+    overflow: visible;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-row.is-new,
+  .dialog,
+  .dialog-backdrop {
+    animation: none;
+  }
+
+  .tree-chevron {
+    transition: none;
+  }
+}

@@ -4,6 +4,9 @@ import type { CreateProjectInput, Project } from '../types/project'
 export const projectsApi = {
   list: () => apiRequest<{ projects: Project[] }>('/projects'),
 
+  get: (projectId: string) =>
+    apiRequest<{ project: Project }>(`/projects/${encodeURIComponent(projectId)}`),
+
   // Poate dura până la ~60 de secunde: serverul pornește mediul proiectului
   // și scrie fișierul de pornire înainte să răspundă.
   create: (input: CreateProjectInput) =>
