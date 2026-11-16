@@ -180,26 +180,24 @@ jobs:
       # GitHub's machine has Go, Node and more, and full sudo; the server doesn't.
       - name: Make this machine look like the server
         run: |
-          # The only sudo rule ghrunner has (infra/setup-runner.sh). One root shell:
-          # once the broad rule is gone, a second sudo call would be refused.
-          sudo sh -ec '
-            rule=/etc/sudoers.d/zz-deploy
-            echo "$1 ALL=(root) NOPASSWD: /usr/local/bin/k3s ctr -n k8s.io images import -" > "$rule"
-            chmod 440 "$rule"
-            for f in /etc/sudoers /etc/sudoers.d/*; do
-              [ "$f" = "$rule" ] || sed -i "/NOPASSWD/d" "$f"
-            done
-            visudo -c >/dev/null
-          ' _ "$(id -un)"
-          if sudo -n true 2>/dev/null; then
-            echo "::error::sudo is still unrestricted on this machine"
-            exit 1
-          fi
-          mkdir -p "$RUNNER_TEMP/server-bin"
+          bin="$RUNNER_TEMP/server-bin"
+          mkdir -p "$bin"
           for t in $SERVER_TOOLS; do
+            [ "$t" = sudo ] && continue
             p=$(type -P "$t") || { echo "::error::$t is missing on this machine"; exit 1; }
-            ln -s "$p" "$RUNNER_TEMP/server-bin/$t"
+            ln -s "$p" "$bin/$t"
           done
+          # On the server ghrunner may sudo exactly one command (infra/setup-runner.sh).
+          cat > "$bin/sudo" <<'SUDO'
+          #!/bin/bash
+          [ "${1:-}" = "-n" ] && shift
+          if [ "$*" = "/usr/local/bin/k3s ctr -n k8s.io images import -" ]; then
+            exec /usr/bin/sudo -n "$@"
+          fi
+          echo "::error title=sudo not allowed on the server::sudo $* (the server only allows: sudo /usr/local/bin/k3s ctr -n k8s.io images import -)" >&2
+          exit 1
+          SUDO
+          chmod +x "$bin/sudo"
 
       - name: Run the deploy script
         run: |
