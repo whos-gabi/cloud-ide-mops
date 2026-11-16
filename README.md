@@ -82,6 +82,10 @@ Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator
 | Endpoint | Story | Body | Răspuns |
 |---|---|---|---|
 | `POST /api/auth/register` | US01 | `{ email, password }` | `201 { user }` · `400 VALIDATION_ERROR` · `409 EMAIL_TAKEN` |
+| `POST /api/auth/login` | US02 | `{ email, password }` | `200 { user }` + cookie `sid` · `401 INVALID_CREDENTIALS` |
+| `GET /api/auth/me` | US02 | – | `200 { user }` · `401 UNAUTHENTICATED` |
+
+Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare.
 
 ## Cum ajunge codul live
 
