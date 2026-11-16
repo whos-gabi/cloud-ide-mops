@@ -1,46 +1,32 @@
-import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
+import { GuestRoute } from './components/GuestRoute'
+import { ProtectedRoute } from './components/ProtectedRoute'
+import { AuthProvider } from './context/AuthContext'
+import { DashboardPage } from './pages/DashboardPage'
+import { LoginPage } from './pages/LoginPage'
+import { RegisterPage } from './pages/RegisterPage'
 
-type Health = { status: string; version: string; uptime: number }
-
-function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json() as Promise<Health>
-      })
-      .then(setHealth)
-      .catch((err: Error) => setError(err.message))
-  }, [])
-
+export default function App() {
   return (
-    <main className="page">
-      <h1>Cloud IDE</h1>
-      <p className="tagline">Scrii, rulezi și imporți cod din GitHub, direct din browser.</p>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<GuestRoute />}>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+          </Route>
 
-      <section className="status">
-        <h2>Status</h2>
-        <ul>
-          <li>
-            <span className="dot ok" /> Frontend: online
-          </li>
-          <li>
-            <span className={`dot ${health ? 'ok' : error ? 'err' : 'wait'}`} /> Backend:{' '}
-            {health ? 'online' : error ? `offline (${error})` : 'se verifică...'}
-          </li>
-        </ul>
-        {health && (
-          <p className="version">
-            Versiune deployată: <code>{health.version.slice(0, 7)}</code>
-          </p>
-        )}
-      </section>
-    </main>
+          <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            {/* Aici vei adăuga ușor paginile viitoare, ex: */}
+            {/* <Route path="/projects" element={<ProjectsPage />} /> */}
+            {/* <Route path="/editor/:projectId" element={<EditorPage />} /> */}
+          </Route>
+
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
-
-export default App
