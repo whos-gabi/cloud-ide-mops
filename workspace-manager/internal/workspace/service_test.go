@@ -287,3 +287,22 @@ func TestValidWorkspaceID(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteDirectoryCallsTheFileAgent(t *testing.T) {
+	var got string
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Method + " " + r.URL.Path + "?" + r.URL.RawQuery
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer agent.Close()
+
+	service := NewWorkspaceService(nil)
+	service.fileAgentBaseURL = func(string) string { return agent.URL }
+
+	if err := service.DeleteDirectory(context.Background(), "ws-1", "src/lib"); err != nil {
+		t.Fatalf("delete directory: %v", err)
+	}
+	if got != "DELETE /directories?path=src%2Flib" {
+		t.Fatalf("unexpected file agent request %q", got)
+	}
+}

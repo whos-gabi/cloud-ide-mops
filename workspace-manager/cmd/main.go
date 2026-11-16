@@ -93,6 +93,7 @@ type workspaceService interface {
 	RenameFile(context.Context, string, string, string) error
 	MoveFile(context.Context, string, string, string) error
 	CreateDirectory(context.Context, string, string) error
+	DeleteDirectory(context.Context, string, string) error
 }
 
 // Every route except /health needs "Authorization: Bearer <token>".
@@ -124,6 +125,7 @@ func newRouter(service workspaceService, token string) chi.Router {
 			r.Post("/files/rename", renameFileHandler(service))
 			r.Post("/files/move", moveFileHandler(service))
 			r.Post("/directories", createDirectoryHandler(service))
+			r.Delete("/directories", deleteDirectoryHandler(service))
 		})
 	})
 
@@ -379,6 +381,22 @@ func moveFileHandlerWith(
 			chi.URLParam(r, "workspaceID"),
 			r.URL.Query().Get("path"),
 			r.URL.Query().Get("destination"),
+		)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func deleteDirectoryHandler(service workspaceService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := service.DeleteDirectory(
+			r.Context(),
+			chi.URLParam(r, "workspaceID"),
+			r.URL.Query().Get("path"),
 		)
 		if err != nil {
 			writeServiceError(w, err)

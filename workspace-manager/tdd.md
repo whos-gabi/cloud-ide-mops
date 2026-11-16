@@ -48,6 +48,8 @@ Testele sunt implementate în [cmd/main_test.go]
 | `TestListFilesHandlerReturnsJSON` | Lista de fișiere este serializată corect în JSON |
 | `TestFileHandlersForwardTheFileAgentStatus` | `400`, `404`, `409`, `413` de la File Agent ajung neschimbate |
 | `TestFileHandlersReportAnUnreachableWorkspaceAsUnavailable` | Un workspace oprit returnează `503` |
+| `TestDeleteDirectoryHandler` | `DELETE .../directories?path=` returnează `204` și transmite calea |
+| `TestDeleteDirectoryHandlerForwardsNotFound` | Un director inexistent returnează `404` |
 | `TestFileContentHandlerReturnsServerError` | Erorile de stocare returnează `500 Internal Server Error` |
 
 ## Teste Workspace Service

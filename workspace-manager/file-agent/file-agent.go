@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -323,18 +324,27 @@ func (a *FileAgent) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *FileAgent) handleDirectory(w http.ResponseWriter, r *http.Request) {
+	// Never the workspace root itself.
 	path, err := safePath(r.URL.Query().Get("path"), false)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
+	switch r.Method {
+	case http.MethodPost:
+		a.createDirectory(w, path)
 
+	case http.MethodDelete:
+		a.deleteDirectory(w, path)
+
+	default:
+		w.Header().Set("Allow", "POST, DELETE")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (a *FileAgent) createDirectory(w http.ResponseWriter, path string) {
 	if err := a.root.Mkdir(path, 0755); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			writeError(w, http.StatusConflict, "directory already exists")
@@ -346,6 +356,28 @@ func (a *FileAgent) handleDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+// deleteDirectory removes a directory and everything in it. Symlinks inside
+// are removed, never followed.
+func (a *FileAgent) deleteDirectory(w http.ResponseWriter, path string) {
+	info, err := a.root.Lstat(path)
+	if err != nil {
+		handleFileError(w, err)
+		return
+	}
+
+	if !info.IsDir() {
+		writeError(w, http.StatusBadRequest, "path is not a directory")
+		return
+	}
+
+	if err := a.root.RemoveAll(path); err != nil {
+		handleFileError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ------------------------------------------------------------------
@@ -393,6 +425,10 @@ func handleFileError(w http.ResponseWriter, err error) {
 
 	case errors.Is(err, fs.ErrExist):
 		writeError(w, http.StatusConflict, "already exists")
+
+	// e.g. creating "a.txt/b" when a.txt is a file.
+	case errors.Is(err, syscall.ENOTDIR):
+		writeError(w, http.StatusBadRequest, "parent is not a directory")
 
 	default:
 		log.Printf("filesystem error: %v", err)

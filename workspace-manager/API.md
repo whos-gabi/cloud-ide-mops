@@ -311,6 +311,23 @@ POST /workspaces/{workspaceID}/directories?path=src
 201 Created
 ```
 
+Directorul părinte trebuie să existe. Dacă există deja un fișier sau un director
+cu același nume: `409 Conflict`.
+
+### Ștergere director
+
+```http
+DELETE /workspaces/{workspaceID}/directories?path=src
+```
+
+Șterge directorul cu tot conținutul lui. Link-urile simbolice din interior se șterg,
+dar nu sunt urmate. Rădăcina workspace-ului nu poate fi ștearsă (`400`), iar o cale
+care e fișier primește `400` (fișierele se șterg cu `DELETE .../files`).
+
+```text
+204 No Content
+```
+
 ## Exemple pentru backend
 
 Serviciul e doar pentru backend: browser-ul nu are acces la el și nu are token-ul.
@@ -378,7 +395,7 @@ Corpul răspunsului de eroare este un mesaj text.
 
 | Status | Când |
 |---|---|
-| `400 Bad Request` | body JSON invalid, `workspaceID` sau `userID` invalid, cale invalidă (File Agent) |
+| `400 Bad Request` | body JSON invalid, `workspaceID` sau `userID` invalid, cale invalidă sau părinte care nu e director (File Agent) |
 | `401 Unauthorized` | lipsește token-ul sau e greșit |
 | `404 Not Found` | workspace-ul (Deployment-ul) nu există, inclusiv la operațiile pe fișiere; fișierul sau directorul nu există (File Agent) |
 | `409 Conflict` | workspace-ul există deja, fișierul sau directorul există deja (File Agent) |
