@@ -1,12 +1,17 @@
+import type { EntityManager } from 'typeorm'
 import { dataSource } from '../database/data-source.js'
 import { Project } from '../models/project.model.js'
 
 export type NewProject = Pick<Project, 'userId' | 'name' | 'language' | 'workspaceId'>
 
 export class ProjectRepository {
-  async create(data: NewProject): Promise<Project> {
-    const projects = dataSource.getRepository(Project)
+  async create(data: NewProject, manager: EntityManager = dataSource.manager): Promise<Project> {
+    const projects = manager.getRepository(Project)
     return projects.save(projects.create(data))
+  }
+
+  async countByUser(userId: string, manager: EntityManager = dataSource.manager): Promise<number> {
+    return manager.getRepository(Project).countBy({ userId })
   }
 
   async delete(id: string): Promise<void> {

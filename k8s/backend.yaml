@@ -11,6 +11,9 @@ spec:
     metadata:
       labels: { app: backend }
     spec:
+      # Creating a project can take ~100 s (workspace start plus rollback);
+      # let requests in flight finish during a rollout instead of being killed.
+      terminationGracePeriodSeconds: 120
       containers:
         - name: backend
           image: cloud-ide-backend

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { authApi } from '../api/auth.api'
+import { setUnauthenticatedHandler } from '../api/client'
 import type { AuthCredentials, UserView } from '../types/auth'
 
 interface AuthContextValue {
@@ -15,6 +16,13 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserView | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  // Any request that finds the session gone logs the user out here too;
+  // ProtectedRoute then sends them to the login page.
+  useEffect(() => {
+    setUnauthenticatedHandler(() => setUser(null))
+    return () => setUnauthenticatedHandler(null)
+  }, [])
 
   useEffect(() => {
     let active = true

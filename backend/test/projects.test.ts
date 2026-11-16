@@ -124,7 +124,9 @@ describe('POST /api/projects', () => {
       { body: { language: 'python' }, field: 'name', message: 'Introdu numele proiectului.' },
       { body: { name: '   ', language: 'python' }, field: 'name', message: 'Introdu numele proiectului.' },
       { body: { name: 'a'.repeat(101), language: 'python' }, field: 'name', message: 'Numele poate avea cel mult 100 de caractere.' },
-      { body: { name: 'linia1\nlinia2', language: 'python' }, field: 'name', message: 'Numele nu poate conține caractere de control.' },
+      { body: { name: 'linia1\nlinia2', language: 'python' }, field: 'name', message: 'Numele nu poate conține caractere de control sau invizibile.' },
+      { body: { name: 'Tem\u200Bă', language: 'python' }, field: 'name', message: 'Numele nu poate conține caractere de control sau invizibile.' },
+      { body: { name: 'abc\u202Edcba', language: 'python' }, field: 'name', message: 'Numele nu poate conține caractere de control sau invizibile.' },
       { body: { name: 'x' }, field: 'language', message: 'Alege limbajul: Python, JavaScript, Java sau C++.' },
       { body: { name: 'x', language: 'rust' }, field: 'language', message: 'Alege limbajul: Python, JavaScript, Java sau C++.' },
       { body: { name: 'x', language: 'Python' }, field: 'language', message: 'Alege limbajul: Python, JavaScript, Java sau C++.' },
@@ -142,6 +144,12 @@ describe('POST /api/projects', () => {
         assert.equal(workspaces.workspaces.size, 0)
       })
     }
+
+    it('accepts emoji, including ones joined with a zero-width joiner', async () => {
+      const user = await loggedIn()
+      const res = await createProject(user, { name: 'Proiect 👩\u200D💻', language: 'python' })
+      assert.equal(res.status, 201)
+    })
 
     it('accepts a name of exactly 100 characters', async () => {
       const user = await loggedIn()
@@ -168,6 +176,14 @@ describe('POST /api/projects', () => {
       assert.equal(workspaces.workspaces.size, 1)
     })
 
+    it('treats the same name typed with a combining accent as the same name', async () => {
+      const user = await loggedIn()
+      assert.equal((await createProject(user, { name: 'Temă'.normalize('NFC'), language: 'python' })).status, 201)
+      const res = await createProject(user, { name: 'Temă'.normalize('NFD'), language: 'python' })
+      assert.equal(res.status, 409)
+      assert.equal((await res.json()).code, 'PROJECT_NAME_TAKEN')
+    })
+
     it('lets two users have projects with the same name', async () => {
       const ana = await loggedIn()
       const ion = await loggedIn()
@@ -185,6 +201,47 @@ describe('POST /api/projects', () => {
       ).map((res) => res.status)
       assert.deepEqual(statuses.sort(), [201, 409])
       assert.equal((await projectRows(user.id)).length, 1)
+    })
+  })
+
+  describe('limit per user', () => {
+    const savedLimit = config.projects.maxPerUser
+    beforeEach(() => {
+      config.projects.maxPerUser = 3
+    })
+    afterEach(() => {
+      config.projects.maxPerUser = savedLimit
+    })
+
+    it('refuses a project over the limit, without touching workspace-manager', async () => {
+      const user = await loggedIn()
+      for (const name of ['a', 'b', 'c']) {
+        assert.equal((await createProject(user, { name, language: 'python' })).status, 201)
+      }
+
+      const res = await createProject(user, { name: 'd', language: 'python' })
+
+      assert.equal(res.status, 409)
+      assert.deepEqual(await res.json(), { error: 'Poți avea cel mult 3 proiecte.', code: 'PROJECT_LIMIT_REACHED' })
+      assert.equal(workspaces.workspaces.size, 3)
+    })
+
+    it('holds when the requests come all at once', async () => {
+      const user = await loggedIn()
+      const statuses = (
+        await Promise.all(['a', 'b', 'c', 'd', 'e'].map((name) => createProject(user, { name, language: 'python' })))
+      ).map((res) => res.status)
+      assert.deepEqual(statuses.sort(), [201, 201, 201, 409, 409])
+      assert.equal((await projectRows(user.id)).length, 3)
+    })
+
+    it('counts each user separately', async () => {
+      const ana = await loggedIn()
+      const ion = await loggedIn()
+      for (const name of ['a', 'b', 'c']) {
+        assert.equal((await createProject(ana, { name, language: 'python' })).status, 201)
+      }
+      assert.equal((await createProject(ion, { name: 'a', language: 'python' })).status, 201)
     })
   })
 

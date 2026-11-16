@@ -13,6 +13,14 @@ export class ApiError extends Error {
   }
 }
 
+// Called when the server says the session is gone (expired, or logged out in
+// another tab), so the app can send the user to the login page.
+let onUnauthenticated: (() => void) | null = null
+
+export function setUnauthenticatedHandler(handler: (() => void) | null) {
+  onUnauthenticated = handler
+}
+
 export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${endpoint}`, {
     ...options,
@@ -30,7 +38,10 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
   const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null
 
   if (!response.ok) {
-    throw new ApiError(response.status, payload)
+    const error = new ApiError(response.status, payload)
+    // Not every 401: a failed login (INVALID_CREDENTIALS) stays on its form.
+    if (error.code === 'UNAUTHENTICATED') onUnauthenticated?.()
+    throw error
   }
 
   return payload as T

@@ -3,13 +3,16 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { WorkspaceManagerError, workspaceManager } from '../clients/workspace-manager.client.js'
 import { config } from '../config/config.js'
 import { isUniqueViolation } from '../database/errors.js'
+import { runInTransaction } from '../database/transaction.js'
 import { HttpError } from '../errors/http-error.js'
 import type { Project } from '../models/project.model.js'
-import { projectRepository } from '../repositories/project.repository.js'
+import { projectRepository, type NewProject } from '../repositories/project.repository.js'
 import type { CreateProjectInput } from '../validators/project.validator.js'
 import { STARTER_FILES } from './starter-files.js'
 
 const NAME_TAKEN = 'Ai deja un proiect cu acest nume.'
+// Advisory lock class for "one project creation at a time per user".
+const PROJECT_LOCK_CLASS = 7_231_002
 
 export class ProjectService {
   async list(userId: string): Promise<Project[]> {
@@ -20,15 +23,7 @@ export class ProjectService {
   // requests for the same name; then the project gets its workspace and starter
   // file. If that fails, both are removed again and the name is free.
   async create(userId: string, { name, language }: CreateProjectInput): Promise<Project> {
-    let project: Project
-    try {
-      project = await projectRepository.create({ userId, name, language, workspaceId: `ws-${randomUUID()}` })
-    } catch (err) {
-      if (isUniqueViolation(err, 'UQ_projects_userId_name')) {
-        throw new HttpError(409, 'PROJECT_NAME_TAKEN', NAME_TAKEN, { name: NAME_TAKEN })
-      }
-      throw err
-    }
+    const project = await this.reserve({ userId, name, language, workspaceId: `ws-${randomUUID()}` })
 
     try {
       await this.setUpWorkspace(project)
@@ -37,7 +32,9 @@ export class ProjectService {
       await workspaceManager.deleteWorkspace(project.workspaceId).catch((cleanupErr: unknown) => {
         console.error(`project ${project.id}: workspace ${project.workspaceId} left behind:`, cleanupErr)
       })
-      await projectRepository.delete(project.id)
+      await projectRepository.delete(project.id).catch((cleanupErr: unknown) => {
+        console.error(`project ${project.id}: row left behind:`, cleanupErr)
+      })
       throw new HttpError(
         503,
         'WORKSPACE_UNAVAILABLE',
@@ -45,6 +42,26 @@ export class ProjectService {
       )
     }
     return project
+  }
+
+  // Saves the row, if the name is free and the user is under the limit. The
+  // lock makes a user's simultaneous requests count one after the other.
+  private async reserve(data: NewProject): Promise<Project> {
+    const { maxPerUser } = config.projects
+    try {
+      return await runInTransaction(async (manager) => {
+        await manager.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [PROJECT_LOCK_CLASS, data.userId])
+        if ((await projectRepository.countByUser(data.userId, manager)) >= maxPerUser) {
+          throw new HttpError(409, 'PROJECT_LIMIT_REACHED', `Poți avea cel mult ${maxPerUser} proiecte.`)
+        }
+        return projectRepository.create(data, manager)
+      })
+    } catch (err) {
+      if (isUniqueViolation(err, 'UQ_projects_userId_name')) {
+        throw new HttpError(409, 'PROJECT_NAME_TAKEN', NAME_TAKEN, { name: NAME_TAKEN })
+      }
+      throw err
+    }
   }
 
   private async setUpWorkspace(project: Project): Promise<void> {

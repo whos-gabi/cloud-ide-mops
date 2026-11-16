@@ -29,6 +29,11 @@ export const config = {
     cookieName: 'sid',
     ttlMs: 7 * 24 * 60 * 60 * 1000,
   },
+  projects: {
+    // Each project keeps a workspace (a pod and a volume), so one account
+    // can't fill the server.
+    maxPerUser: 10,
+  },
   workspaceManager: {
     url: workspaceManagerSetting('WORKSPACE_MANAGER_URL', 'http://localhost:8080'),
     token: workspaceManagerSetting('WORKSPACE_MANAGER_TOKEN', 'dev-workspace-manager-token'),

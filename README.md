@@ -96,9 +96,9 @@ Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator
 | `GET /api/auth/me` | US02 | – | `200 { user }` · `401 UNAUTHENTICATED` |
 | `POST /api/auth/logout` | US03 | – | `204`, șterge sesiunea și cookie-ul (reușește și fără sesiune) |
 | `GET /api/projects` | US04 | – | `200 { projects }`, ale utilizatorului, cele modificate recent primele |
-| `POST /api/projects` | US04 | `{ name, language }` | `201 { project }` · `400 VALIDATION_ERROR` · `409 PROJECT_NAME_TAKEN` · `503 WORKSPACE_UNAVAILABLE` |
+| `POST /api/projects` | US04 | `{ name, language }` | `201 { project }` · `400 VALIDATION_ERROR` · `409 PROJECT_NAME_TAKEN` · `409 PROJECT_LIMIT_REACHED` · `503 WORKSPACE_UNAVAILABLE` |
 
-Un proiect are `language` unul dintre `python`, `javascript`, `java`, `cpp`, iar numele (cel mult 100 de caractere) e unic printre proiectele utilizatorului, fără să conteze literele mari. La creare, backend-ul îi face proiectului un workspace prin `workspace-manager` și scrie în el fișierul inițial: `main.py`, `index.js`, `Main.java` sau `main.cpp`. Răspunde abia după aceea, de obicei în câteva secunde. Dacă workspace-ul nu pornește în 60 s, proiectul și workspace-ul se șterg și răspunsul e `503`.
+Un proiect are `language` unul dintre `python`, `javascript`, `java`, `cpp`, iar numele (cel mult 100 de caractere, fără caractere invizibile) e unic printre proiectele utilizatorului, fără să conteze literele mari. Un utilizator poate avea cel mult 10 proiecte (`config.projects.maxPerUser`), pentru că fiecare ține un workspace pe server. La creare, backend-ul îi face proiectului un workspace prin `workspace-manager` și scrie în el fișierul inițial: `main.py`, `index.js`, `Main.java` sau `main.cpp`. Răspunde abia după aceea, de obicei în câteva secunde. Dacă workspace-ul nu pornește în 60 s, proiectul și workspace-ul se șterg și răspunsul e `503`.
 
 Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare. Răspunsurile lor au `Cache-Control: no-store`, ca butonul Back să nu mai arate date după deconectare. Deconectarea închide doar sesiunea de pe dispozitivul curent.
 
