@@ -7,6 +7,14 @@ export interface TestServer {
   postJson: (path: string, body: unknown) => Promise<Response>
 }
 
+// The value and attributes of a cookie the response sets, or null.
+export function getSetCookie(res: Response, name: string): { value: string; attributes: string[] } | null {
+  const header = res.headers.getSetCookie().find((c) => c.startsWith(`${name}=`))
+  if (!header) return null
+  const [pair, ...attributes] = header.split(';').map((part) => part.trim())
+  return { value: decodeURIComponent(pair.slice(name.length + 1)), attributes }
+}
+
 export async function startServer(): Promise<TestServer> {
   const server = createApp().listen(0)
   await new Promise<void>((resolve) => server.once('listening', resolve))

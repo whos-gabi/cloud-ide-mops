@@ -14,3 +14,11 @@ const password = z
 export const registerSchema = z.object({ email, password })
 
 export type RegisterInput = z.output<typeof registerSchema>
+
+// Only checks presence: a malformed email is just wrong credentials (US02).
+export const loginSchema = z.object({
+  email: z.string({ error: 'Introdu adresa de email.' }).trim().toLowerCase().min(1, { error: 'Introdu adresa de email.' }),
+  password: z.string({ error: 'Introdu parola.' }).min(1, { error: 'Introdu parola.' }),
+})
+
+export type LoginInput = z.output<typeof loginSchema>
