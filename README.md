@@ -10,6 +10,7 @@ IDE în browser: editezi cod (cu drag & drop), îți faci cont, imporți repo-ur
 frontend/            React + TypeScript (Vite), servit de nginx
 backend/             Node + Express + TypeScript, API sub /api, PostgreSQL prin TypeORM
 k8s/                 manifestele Kubernetes (k3s) pentru deploy
+workspace-manager/   serviciul Go care creează workspace-uri în namespace-ul cloud-ide
 scripts/             deploy.sh: build + deploy pe server
 infra/               setup unic al serverului (namespace, runner CI)
 docker-compose.yml   baza de date pentru dezvoltare locală
@@ -100,6 +101,12 @@ Progresul și log-urile se văd în tab-ul **Actions** din GitHub.
 ## Server (doar pentru admin)
 
 - Cluster: k3s pe VPS, namespace `cloud-ide`, cu ingress prin Traefik.
+- Workspace Manager și workspace-urile create dinamic rulează în același namespace
+  `cloud-ide`; manifestul lui este `k8s/workspace-manager.yaml`.
+- `scripts/deploy.sh` construiește și importă imaginile `cloud-ide-workspace-manager`,
+  `cloud-ide-file-agent` și runtime-ul `cloudcode:dev` din
+  `workspace-runtime/Dockerfile`. Runtime-ul poate fi înlocuit prin variabila
+  `WORKSPACE_RUNTIME_IMAGE`.
 - Cloudflare face proxy pentru domeniu către server.
 - Deploy manual, de pe server: `./scripts/deploy.sh`
 - Pod-uri și log-uri: `kubectl -n cloud-ide get pods`, apoi `kubectl -n cloud-ide logs deploy/backend`

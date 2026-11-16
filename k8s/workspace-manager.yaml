@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workspace-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workspace-manager
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workspace-manager
+subjects:
+  - kind: ServiceAccount
+    name: workspace-manager
+roleRef:
+  kind: Role
+  name: workspace-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspace-manager
+  labels: { app: workspace-manager }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: workspace-manager }
+  template:
+    metadata:
+      labels: { app: workspace-manager }
+    spec:
+      serviceAccountName: workspace-manager
+      containers:
+        - name: workspace-manager
+          image: cloud-ide-workspace-manager
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: WORKSPACE_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: FILE_AGENT_IMAGE
+              value: cloud-ide-file-agent:dev
+            - name: WORKSPACE_RUNTIME_IMAGE
+              value: cloudcode:dev
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workspace-manager
+spec:
+  selector: { app: workspace-manager }
+  ports:
+    - port: 8080
+      targetPort: 8080
