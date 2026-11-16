@@ -47,6 +47,13 @@ async function request(method: string, path: string, { query, json, body }: Requ
 
 const workspacePath = (workspaceId: string) => `/workspaces/${encodeURIComponent(workspaceId)}`
 
+// One directory level, as workspace-manager lists it.
+export interface WorkspaceDirectory {
+  name: string
+  type: 'directory'
+  children?: { name: string; type: 'file' | 'directory' | 'symlink'; size?: number }[]
+}
+
 export const workspaceManager = {
   // Creates and starts the workspace (Deployment, Service and volume).
   async createWorkspace(workspaceId: string, userId: string): Promise<void> {
@@ -58,9 +65,30 @@ export const workspaceManager = {
     await request('DELETE', workspacePath(workspaceId))
   },
 
-  // Fails with 409 if the path exists, 404 if its directory doesn't, and 503
-  // while the workspace isn't running.
+  // Paths are relative to the workspace root ("" is the root itself). File
+  // calls fail with 409 if the path exists, 404 if it (or its directory)
+  // doesn't, 400 if it's the wrong kind or not valid, and 503 while the
+  // workspace isn't running.
   async createFile(workspaceId: string, path: string, content: string): Promise<void> {
     await request('POST', `${workspacePath(workspaceId)}/files`, { query: { path }, body: content })
+  },
+
+  async createDirectory(workspaceId: string, path: string): Promise<void> {
+    await request('POST', `${workspacePath(workspaceId)}/directories`, { query: { path } })
+  },
+
+  async listDirectory(workspaceId: string, path: string): Promise<WorkspaceDirectory> {
+    const text = await request('GET', `${workspacePath(workspaceId)}/files/list`, { query: { path } })
+    return JSON.parse(text) as WorkspaceDirectory
+  },
+
+  // Regular files only.
+  async deleteFile(workspaceId: string, path: string): Promise<void> {
+    await request('DELETE', `${workspacePath(workspaceId)}/files`, { query: { path } })
+  },
+
+  // Directories only, with everything in them.
+  async deleteDirectory(workspaceId: string, path: string): Promise<void> {
+    await request('DELETE', `${workspacePath(workspaceId)}/directories`, { query: { path } })
   },
 }

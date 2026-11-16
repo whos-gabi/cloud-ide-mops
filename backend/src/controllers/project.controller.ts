@@ -16,3 +16,9 @@ export async function createProject(req: Request, res: Response): Promise<void> 
   const project = await projectService.create(req.user!.id, input)
   res.status(201).json({ project: toProjectView(project) })
 }
+
+// GET /api/projects/:projectId
+export async function getProject(req: Request, res: Response): Promise<void> {
+  const project = await projectService.getOwned(req.user!.id, String(req.params.projectId))
+  res.json({ project: toProjectView(project) })
+}
