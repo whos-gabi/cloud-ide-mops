@@ -3,6 +3,12 @@ import { z } from 'zod'
 const MAX_PATH = 1024
 const MAX_NAME_BYTES = 255 // Linux limit for one file name
 const CONTROL = /\p{Cc}/u
+// New names also may not have invisible characters (zero-width space,
+// right-to-left override, line separators): two names could look the same.
+// The zero-width joiner stays allowed, emoji like 👩‍💻 need it. Paths only
+// refuse control characters, so files made some other way can still be
+// listed and deleted.
+const CONTROL_OR_INVISIBLE = /(?!\u200D)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
 
 function isValidName(name: string): boolean {
   return (
@@ -39,7 +45,9 @@ export const createEntrySchema = z.object({
     .min(1, { error: NAME_REQUIRED })
     .refine((name) => !name.includes('/') && !name.includes('\\'), { error: 'Numele nu poate conține „/” sau „\\”.' })
     .refine((name) => name !== '.' && name !== '..', { error: 'Numele nu poate fi „.” sau „..”.' })
-    .refine((name) => !CONTROL.test(name), { error: 'Numele nu poate conține caractere de control.' })
+    .refine((name) => !CONTROL_OR_INVISIBLE.test(name), {
+      error: 'Numele nu poate conține caractere de control sau invizibile.',
+    })
     .refine((name) => Buffer.byteLength(name) <= MAX_NAME_BYTES, { error: 'Numele este prea lung.' }),
   type: z.enum(['file', 'directory'], { error: 'Alege dacă e fișier sau director.' }),
 })
