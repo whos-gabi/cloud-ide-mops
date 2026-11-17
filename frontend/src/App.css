@@ -1452,3 +1452,89 @@ body:has(.workspace-page) {
     transition: none;
   }
 }
+
+.field input.input-error {
+  border-color: var(--err);
+}
+
+.field input.input-error:focus {
+  border-color: var(--err);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.field-error {
+  color: #fca5a5;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+
+.protected-shell {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.topbar {
+  width: 100%;
+  background: rgba(17, 24, 39, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.65rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.topbar-badge {
+  margin-bottom: 0;
+}
+
+.topbar-title {
+  font-weight: 600;
+  font-size: 0.925rem;
+  color: var(--text-primary);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topbar-user {
+  font-size: 0.825rem;
+  color: var(--text-secondary);
+}
+
+.btn-logout-sm {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 7px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-logout-sm:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.btn-logout-sm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

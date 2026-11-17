@@ -10,6 +10,11 @@ interface LocationState {
   from?: { pathname: string }
 }
 
+type FieldErrors = {
+  email?: string
+  password?: string
+}
+
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -19,11 +24,13 @@ export function LoginPage() {
   const [email, setEmail] = useState(state?.registeredEmail ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
+    setFieldErrors({})
     setSubmitting(true)
 
     try {
@@ -32,7 +39,14 @@ export function LoginPage() {
       navigate(destination, { replace: true })
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message)
+        if (err.fields && Object.keys(err.fields).length > 0) {
+          setFieldErrors({
+            email: err.fields.email,
+            password: err.fields.password,
+          })
+        } else {
+          setError(err.message)
+        }
       } else {
         setError('Nu s-a putut contacta serverul.')
       }
@@ -69,9 +83,15 @@ export function LoginPage() {
               autoComplete="email"
               placeholder="nume@exemplu.ro"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }))
+              }}
+              aria-invalid={Boolean(fieldErrors.email)}
+              className={fieldErrors.email ? 'input-error' : undefined}
               required
             />
+            {fieldErrors.email && <span className="field-error">{fieldErrors.email}</span>}
           </div>
 
           <div className="field">
@@ -82,9 +102,15 @@ export function LoginPage() {
               autoComplete="current-password"
               placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }))
+              }}
+              aria-invalid={Boolean(fieldErrors.password)}
+              className={fieldErrors.password ? 'input-error' : undefined}
               required
             />
+            {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
           </div>
 
           <button type="submit" className="btn-primary" disabled={submitting}>

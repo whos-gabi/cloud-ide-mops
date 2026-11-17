@@ -26,20 +26,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true
-    authApi
-      .me()
-      .then((res) => {
-        if (active) setUser(res.user)
-      })
-      .catch(() => {
-        if (active) setUser(null)
-      })
-      .finally(() => {
-        if (active) setIsLoading(false)
-      })
+
+    const verifySession = () => {
+      authApi
+        .me()
+        .then((res) => {
+          if (active) setUser(res.user)
+        })
+        .catch(() => {
+          if (active) setUser(null)
+        })
+        .finally(() => {
+          if (active) setIsLoading(false)
+        })
+    }
+
+    verifySession()
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        setIsLoading(true)
+        verifySession()
+      }
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
 
     return () => {
       active = false
+      window.removeEventListener('pageshow', handlePageShow)
     }
   }, [])
 
