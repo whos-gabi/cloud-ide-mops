@@ -8,7 +8,7 @@ export class ApiError extends Error {
   constructor(status: number, payload: ApiErrorPayload | null) {
     super(payload?.message || payload?.error || 'A apărut o eroare neașteptată.')
     this.status = status
-    this.code = payload?.codea
+    this.code = payload?.code
     this.fields = payload?.fields
   }
 }
