@@ -60,30 +60,20 @@ backend/src/
   views/         ce returnează API-ul (ex. user fără parolă)
   controllers/   handler-ele pentru request-uri
   routes/        ce URL ajunge la ce controller (totul sub /api)
-  middleware/    tratarea erorilor, 404
+  middleware/    requireAuth, tratarea erorilor, 404
   errors/        HttpError: status + cod + mesaj
-  utils/         hash-ul parolelor (scrypt)
+  utils/         hash-ul parolelor, tokenul și cookie-ul sesiunii
 ```
 
 Un request trece prin route → controller (validare) → service → repository. Ce scrie mai multe lucruri deodată folosește `runInTransaction` din `database/transaction.ts`: ori se salvează tot, ori nimic.
 
+Documentația backend-ului (baza de date, US01–US03, TDD) e în [`backend/docs/`](backend/docs/README.md).
+
 ## Baza de date și migrări
 
-Schema se schimbă **doar** prin migrări: clase TypeORM scrise de mână, cu `up()` și `down()`, în `backend/src/database/migrations/`. Backend-ul le aplică la pornire, în ordine, fiecare în tranzacția ei.
+Schema se schimbă **doar** prin migrări TypeORM, cu `up()` și `down()`, în `backend/src/database/migrations/`. Backend-ul le aplică singur la pornire. O migrare deja merge-uită pe `main` nu se mai modifică.
 
-Pentru o schimbare de schemă (din `backend/`):
-
-1. Creezi fișierul: `npm run migration:create -- src/database/migrations/AddProjects`. Rezultă `<timestamp>-AddProjects.ts`, cu `up()` și `down()` goale.
-2. Scrii în `up()` schimbarea și în `down()` cum se anulează (vezi `1794827149538-CreateUsers.ts`).
-3. Actualizezi sau adaugi modelul în `src/models/` ca să se potrivească.
-4. `npm run migration:run` o aplică, `npm run migration:revert` o anulează pe ultima, `npm run migration:show` arată ce e aplicat.
-5. `npm run migration:check` verifică dacă modelele și migrările descriu aceeași schemă. Rulează și în CI.
-
-Convenții:
-- Tabele snake_case la plural (`users`, `project_files`), coloane camelCase între ghilimele (`"createdAt"`).
-- Nume explicite pentru constrângeri: `PK_<tabel>`, `UQ_<tabel>_<coloane>`, `IDX_<tabel>_<coloane>`, `FK_<tabel>_<coloană>`, `CHK_<tabel>_<regulă>`.
-- La `@Column` treci mereu tipul (`{ type: 'text' }`): în dev (tsx) TypeORM nu-l poate ghici singur.
-- O migrare deja aplicată (merge-uită pe `main`) nu se mai modifică; pentru orice schimbare faci una nouă.
+Pașii pentru o migrare nouă și convențiile de nume sunt în [`backend/docs/baza-de-date.md`](backend/docs/baza-de-date.md).
 
 ## API
 
@@ -91,10 +81,10 @@ Erorile au forma `{ error, code, fields? }`: `error` e mesajul pentru utilizator
 
 | Endpoint | Story | Body | Răspuns |
 |---|---|---|---|
-| `POST /api/auth/register` | US01 | `{ email, password }` | `201 { user }` · `400 VALIDATION_ERROR` · `409 EMAIL_TAKEN` |
-| `POST /api/auth/login` | US02 | `{ email, password }` | `200 { user }` + cookie `sid` · `401 INVALID_CREDENTIALS` |
-| `GET /api/auth/me` | US02 | – | `200 { user }` · `401 UNAUTHENTICATED` |
-| `POST /api/auth/logout` | US03 | – | `204`, șterge sesiunea și cookie-ul (reușește și fără sesiune) |
+| `POST /api/auth/register` | [US01](backend/docs/us01-creare-cont.md) | `{ email, password }` | `201 { user }` · `400 VALIDATION_ERROR` · `409 EMAIL_TAKEN` |
+| `POST /api/auth/login` | [US02](backend/docs/us02-autentificare.md) | `{ email, password }` | `200 { user }` + cookie `sid` · `400 VALIDATION_ERROR` · `401 INVALID_CREDENTIALS` |
+| `GET /api/auth/me` | [US02](backend/docs/us02-autentificare.md) | – | `200 { user }` · `401 UNAUTHENTICATED` |
+| `POST /api/auth/logout` | [US03](backend/docs/us03-deconectare.md) | – | `204` (și fără sesiune) |
 | `GET /api/projects` | US04 | – | `200 { projects }`, ale utilizatorului, cele modificate recent primele |
 | `POST /api/projects` | US04 | `{ name, language }` | `201 { project }` · `400 VALIDATION_ERROR` · `409 PROJECT_NAME_TAKEN` · `409 PROJECT_LIMIT_REACHED` · `503 WORKSPACE_UNAVAILABLE` |
 | `GET /api/projects/:projectId` | US08 | – | `200 { project }` · `404 PROJECT_NOT_FOUND` |
@@ -106,7 +96,7 @@ Un proiect are `language` unul dintre `python`, `javascript`, `java`, `cpp`, iar
 
 Fișierele unui proiect (US08) sunt în workspace-ul lui. Căile sunt relative la rădăcina proiectului (`src/main.py`; `""` e rădăcina) și nu pot ieși din ea. `type` e `file` sau `directory`, iar un element de oricare tip blochează numele în directorul lui. `400 INVALID_PATH` înseamnă că părintele e un fișier sau că `type` nu se potrivește cu ce e pe disc. Alte erori ale mediului de lucru devin `502 WORKSPACE_ERROR`. Un proiect al altui utilizator primește `404 PROJECT_NOT_FOUND`, la fel ca unul care nu există. Crearea și ștergerea actualizează „ultima modificare” a proiectului.
 
-Sesiunea e un cookie `sid` (HttpOnly, 7 zile); în baza de date se păstrează doar hash-ul lui. Rutele protejate folosesc middleware-ul `requireAuth` și răspund cu `401 UNAUTHENTICATED` fără sesiune validă; la 401 frontend-ul trimite utilizatorul la autentificare. Răspunsurile lor au `Cache-Control: no-store`, ca butonul Back să nu mai arate date după deconectare. Deconectarea închide doar sesiunea de pe dispozitivul curent.
+Rutele protejate folosesc middleware-ul `requireAuth` (`401 UNAUTHENTICATED` fără sesiune validă). Cum funcționează sesiunea: [US02](backend/docs/us02-autentificare.md#sesiunea).
 
 ## Cum ajunge codul live
 
