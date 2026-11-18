@@ -1,30 +1,14 @@
-import { useState } from 'react'
-import { CreateProjectForm } from '../components/CreateProjectForm'
-import { ProjectList } from '../components/ProjectList'
 import { StatusBar } from '../components/StatusBar'
 import { useAuth } from '../context/AuthContext'
-import { useProjects } from '../hooks/useProjects'
 
 export function DashboardPage() {
-  const { user, logout } = useAuth()
-  const [loggingOut, setLoggingOut] = useState(false)
-  const { projects, status, error, recentId, reload, addProject } = useProjects()
+  const { user } = useAuth()
 
   if (!user) return null
 
-  const handleLogout = async () => {
-    setLoggingOut(true)
-    try {
-      await logout()
-    } finally {
-      setLoggingOut(false)
-    }
-  }
-
   return (
-    <div className="layout layout-wide">
+    <div className="layout">
       <header className="brand">
-        <span className="brand-badge">&lt;/&gt; Workspace</span>
         <h1>Cloud IDE</h1>
         <p className="tagline">Bine ai revenit în spațiul tău de lucru.</p>
       </header>
@@ -52,26 +36,7 @@ export function DashboardPage() {
             </span>
           </div>
         </div>
-
-        <button
-          type="button"
-          className="btn-danger"
-          onClick={handleLogout}
-          disabled={loggingOut}
-        >
-          {loggingOut ? 'Se deconectează...' : 'Deconectare'}
-        </button>
       </main>
-
-      <ProjectList
-        projects={projects}
-        status={status}
-        error={error}
-        recentId={recentId}
-        onRetry={reload}
-      />
-
-      <CreateProjectForm onCreated={addProject} />
 
       <StatusBar />
     </div>
